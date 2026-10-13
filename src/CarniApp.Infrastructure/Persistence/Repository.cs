@@ -6,11 +6,14 @@ namespace CarniApp.Infrastructure.Persistence;
 
 /// <summary>
 /// Implementacion generica del Repository Pattern (D-04) sobre EF Core.
+/// _context y _dbSet son protected para que los repositorios
+/// especializados (UsuarioRepository, RefreshTokenRepository, ...)
+/// puedan agregar consultas propias sin reescribir el CRUD base.
 /// </summary>
 public class Repository<T> : IRepository<T> where T : BaseEntity
 {
-    private readonly CarniAppDbContext _context;
-    private readonly DbSet<T> _dbSet;
+    protected readonly CarniAppDbContext _context;
+    protected readonly DbSet<T> _dbSet;
 
     public Repository(CarniAppDbContext context)
     {

@@ -4,17 +4,18 @@ using Microsoft.EntityFrameworkCore;
 namespace CarniApp.Infrastructure.Persistence;
 
 /// <summary>
-/// DbContext principal. En Sprint 0 solo mapea las entidades base
-/// (Negocio, Sucursal, Rol, Permiso, Usuario) necesarias para login
-/// y configuracion de marca; el resto de modulos (Inventario, POS,
-/// Clientes, etc.) se agregan conforme avanzan los siguientes sprints.
+/// DbContext principal. Sprint 0 mapeo las entidades base (Negocio,
+/// Sucursal, Rol, Permiso, Usuario); Sprint 1 agrega RefreshToken
+/// (RF-AUTH-002/007). El resto de modulos (Inventario, POS, Clientes,
+/// etc.) se agregan conforme avanzan los siguientes sprints.
 ///
 /// IMPORTANTE: los scripts SQL en Database/Scripts/ crean las tablas
-/// en SINGULAR (Negocio, Sucursal, Rol, Permiso, RolPermiso, Usuario),
-/// mientras que la convencion de EF Core pluraliza el nombre del DbSet
-/// por defecto. Por eso cada entidad tiene su ToTable(...) explicito
-/// abajo - si agregas una entidad nueva, agrega tambien su ToTable()
-/// usando el mismo nombre (singular) que uses en el script SQL.
+/// en SINGULAR (Negocio, Sucursal, Rol, Permiso, RolPermiso, Usuario,
+/// RefreshToken), mientras que la convencion de EF Core pluraliza el
+/// nombre del DbSet por defecto. Por eso cada entidad tiene su
+/// ToTable(...) explicito abajo - si agregas una entidad nueva, agrega
+/// tambien su ToTable() usando el mismo nombre (singular) que uses en
+/// el script SQL.
 /// </summary>
 public class CarniAppDbContext : DbContext
 {
@@ -28,6 +29,7 @@ public class CarniAppDbContext : DbContext
     public DbSet<Permiso> Permisos => Set<Permiso>();
     public DbSet<RolPermiso> RolPermisos => Set<RolPermiso>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,6 +39,7 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<Permiso>().ToTable("Permiso");
         modelBuilder.Entity<RolPermiso>().ToTable("RolPermiso");
         modelBuilder.Entity<Usuario>().ToTable("Usuario");
+        modelBuilder.Entity<RefreshToken>().ToTable("RefreshToken");
 
         modelBuilder.Entity<RolPermiso>(entity =>
         {
@@ -58,6 +61,16 @@ public class CarniAppDbContext : DbContext
             entity.HasOne(u => u.Rol)
                 .WithMany(r => r.Usuarios)
                 .HasForeignKey(u => u.RolId);
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasIndex(rt => rt.TokenHash).IsUnique();
+            entity.HasIndex(rt => rt.UsuarioId);
+
+            entity.HasOne(rt => rt.Usuario)
+                .WithMany()
+                .HasForeignKey(rt => rt.UsuarioId);
         });
 
         base.OnModelCreating(modelBuilder);

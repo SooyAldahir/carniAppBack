@@ -1,6 +1,8 @@
 using System.Text;
+using CarniApp.Api.Security;
 using CarniApp.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -46,6 +48,11 @@ builder.Services
         };
     });
 
+// --- Autorizacion por permiso granular (RF-AUTH-004, SUP-03) ---
+// PermisoPolicyProvider resuelve policies "Permiso:<clave>" dinamicamente,
+// sin tener que registrar cada permiso del catalogo a mano aqui.
+builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermisoPolicyProvider>();
+builder.Services.AddScoped<IAuthorizationHandler, PermisoAuthorizationHandler>();
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
@@ -56,7 +63,32 @@ builder.Services.AddSwaggerGen(options =>
     {
         Title = "CarniApp API",
         Version = "v1",
-        Description = "Backend del sistema de administracion para carnicerias (Sprint 0: fundacion tecnica)."
+        Description = "Backend del sistema de administracion para carnicerias."
+    });
+
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        Description = "Pega el access token (sin la palabra 'Bearer')."
+    });
+
+    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    {
+        {
+            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+            {
+                Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                {
+                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
     });
 });
 

@@ -1,4 +1,8 @@
 using CarniApp.Application.Common.Interfaces;
+using CarniApp.Application.Features.Auth;
+using CarniApp.Application.Features.Negocio;
+using CarniApp.Infrastructure.Security;
+using CarniApp.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +26,16 @@ public static class DependencyInjection
                 sql => sql.EnableRetryOnFailure()));
 
         services.AddScoped<IUnitOfWork, Persistence.UnitOfWork>();
+        services.AddScoped(typeof(IRepository<>), typeof(Persistence.Repository<>));
+        services.AddScoped<IUsuarioRepository, Persistence.UsuarioRepository>();
+        services.AddScoped<IRefreshTokenRepository, Persistence.RefreshTokenRepository>();
+
+        services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
+        services.AddSingleton<IPasswordHasher, PasswordHasher>();
+        services.AddScoped<ITokenService, TokenService>();
+
+        services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<INegocioService, NegocioService>();
 
         return services;
     }
