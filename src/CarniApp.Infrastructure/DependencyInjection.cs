@@ -1,6 +1,7 @@
 using CarniApp.Application.Common.Interfaces;
 using CarniApp.Application.Features.Auth;
 using CarniApp.Application.Features.Negocio;
+using CarniApp.Application.Features.Catalogos;
 using CarniApp.Infrastructure.Security;
 using CarniApp.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,8 @@ public static class DependencyInjection
         services.AddScoped(typeof(IRepository<>), typeof(Persistence.Repository<>));
         services.AddScoped<IUsuarioRepository, Persistence.UsuarioRepository>();
         services.AddScoped<IRefreshTokenRepository, Persistence.RefreshTokenRepository>();
+        services.AddScoped<ITipoAnimalRepository, Persistence.TipoAnimalRepository>();
+        services.AddScoped<ICorteRepository, Persistence.CorteRepository>();
 
         services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
@@ -36,6 +39,7 @@ public static class DependencyInjection
 
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<INegocioService, NegocioService>();
+        services.AddScoped<ICatalogoService, CatalogoService>();
 
         return services;
     }

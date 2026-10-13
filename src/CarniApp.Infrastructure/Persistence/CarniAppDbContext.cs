@@ -5,17 +5,17 @@ namespace CarniApp.Infrastructure.Persistence;
 
 /// <summary>
 /// DbContext principal. Sprint 0 mapeo las entidades base (Negocio,
-/// Sucursal, Rol, Permiso, Usuario); Sprint 1 agrega RefreshToken
-/// (RF-AUTH-002/007). El resto de modulos (Inventario, POS, Clientes,
-/// etc.) se agregan conforme avanzan los siguientes sprints.
+/// Sucursal, Rol, Permiso, Usuario); Sprint 1 agrego RefreshToken;
+/// Sprint 2 agrega TipoAnimal y Corte (catalogos). El resto de modulos
+/// se agregan conforme avanzan los siguientes sprints.
 ///
 /// IMPORTANTE: los scripts SQL en Database/Scripts/ crean las tablas
 /// en SINGULAR (Negocio, Sucursal, Rol, Permiso, RolPermiso, Usuario,
-/// RefreshToken), mientras que la convencion de EF Core pluraliza el
-/// nombre del DbSet por defecto. Por eso cada entidad tiene su
-/// ToTable(...) explicito abajo - si agregas una entidad nueva, agrega
-/// tambien su ToTable() usando el mismo nombre (singular) que uses en
-/// el script SQL.
+/// RefreshToken, TipoAnimal, Corte), mientras que la convencion de EF
+/// Core pluraliza el nombre del DbSet por defecto. Por eso cada entidad
+/// tiene su ToTable(...) explicito abajo - si agregas una entidad
+/// nueva, agrega tambien su ToTable() usando el mismo nombre (singular)
+/// que uses en el script SQL.
 /// </summary>
 public class CarniAppDbContext : DbContext
 {
@@ -30,6 +30,8 @@ public class CarniAppDbContext : DbContext
     public DbSet<RolPermiso> RolPermisos => Set<RolPermiso>();
     public DbSet<Usuario> Usuarios => Set<Usuario>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<TipoAnimal> TiposAnimal => Set<TipoAnimal>();
+    public DbSet<Corte> Cortes => Set<Corte>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,6 +42,8 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<RolPermiso>().ToTable("RolPermiso");
         modelBuilder.Entity<Usuario>().ToTable("Usuario");
         modelBuilder.Entity<RefreshToken>().ToTable("RefreshToken");
+        modelBuilder.Entity<TipoAnimal>().ToTable("TipoAnimal");
+        modelBuilder.Entity<Corte>().ToTable("Corte");
 
         modelBuilder.Entity<RolPermiso>(entity =>
         {
@@ -71,6 +75,20 @@ public class CarniAppDbContext : DbContext
             entity.HasOne(rt => rt.Usuario)
                 .WithMany()
                 .HasForeignKey(rt => rt.UsuarioId);
+        });
+
+        modelBuilder.Entity<Corte>(entity =>
+        {
+            entity.Property(c => c.UnidadVenta)
+                .HasConversion<string>()
+                .HasMaxLength(20);
+
+            entity.Property(c => c.PrecioBase).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.StockMinimo).HasColumnType("decimal(10,3)");
+
+            entity.HasOne(c => c.TipoAnimal)
+                .WithMany(t => t.Cortes)
+                .HasForeignKey(c => c.TipoAnimalId);
         });
 
         base.OnModelCreating(modelBuilder);
