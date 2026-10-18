@@ -403,9 +403,10 @@ public class VentaServiceTests : IDisposable
 
         var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
 
-        Assert.Contains("Dir: Av. Siempre Viva 742, Colonia", ticket);
-        Assert.Contains("Nota: Entregar en la puerta de atras,", ticket);
-        Assert.Contains("tocar dos veces", ticket);
+        Assert.Contains("Dir: Av. Siempre Viva 742,", ticket);
+        Assert.Contains("Colonia Centro,", ticket);
+        Assert.Contains("Nota: Entregar en la puerta de", ticket);
+        Assert.Contains("atras, tocar dos veces", ticket);
         Assert.All(ticket.Split('\n'), linea => Assert.True(linea.TrimEnd('\r').Length <= 32, $"Linea de mas de 32 columnas: '{linea}'"));
         Assert.Equal("Entregar en la puerta de atras, tocar dos veces", venta.Nota);
     }
