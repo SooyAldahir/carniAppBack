@@ -25,6 +25,12 @@ public class VentaFacilController : ControllerBase
     public async Task<IActionResult> GetRendimientos(Guid tipoAnimalId, CancellationToken cancellationToken) =>
         Responder(await _service.ObtenerRendimientosAsync(tipoAnimalId, cancellationToken));
 
+    /// <summary>Cortes por peso del tipo de animal con lo aprendido; lo usa la pantalla de registrar lotes.</summary>
+    [PermisoAuthorize("ventafacil.registrar")]
+    [HttpGet("cortes/{tipoAnimalId:guid}")]
+    public async Task<IActionResult> GetCortes(Guid tipoAnimalId, CancellationToken cancellationToken) =>
+        Responder(await _service.ObtenerRendimientosAsync(tipoAnimalId, cancellationToken));
+
     [PermisoAuthorize("catalogo.administrar")]
     [HttpPut("rendimientos")]
     public async Task<IActionResult> PutRendimientos(GuardarRendimientosRequest request, CancellationToken cancellationToken) =>
