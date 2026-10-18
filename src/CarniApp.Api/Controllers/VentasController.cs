@@ -27,7 +27,7 @@ public class VentasController : ControllerBase
     [PermisoAuthorize("pos.vender")]
     [HttpGet("configuracion")]
     public ActionResult<PosConfigDto> Configuracion() =>
-        Ok(new PosConfigDto(_posSettings.RecargoCreditoPorcentaje, _posSettings.DescuentoMaximoSinAutorizacionPorcentaje));
+        Ok(new PosConfigDto(_posSettings.RecargoCreditoPorcentaje, _posSettings.DescuentoMaximoSinAutorizacionPorcentaje, _posSettings.RecargoCreditoMaximoPorcentaje));
 
     /// <summary>Cortes vendibles con precio y stock actual.</summary>
     [PermisoAuthorize("pos.vender")]
@@ -91,7 +91,7 @@ public class VentasController : ControllerBase
         return resultado.Code switch
         {
             VentaResultCode.VentaNoEncontrada or VentaResultCode.ClienteNoEncontrado => NotFound(new { mensaje = resultado.Mensaje }),
-            VentaResultCode.DescuentoNoAutorizado => StatusCode(StatusCodes.Status403Forbidden, new { mensaje = resultado.Mensaje }),
+            VentaResultCode.DescuentoNoAutorizado or VentaResultCode.RecargoNoAutorizado => StatusCode(StatusCodes.Status403Forbidden, new { mensaje = resultado.Mensaje }),
             VentaResultCode.StockInsuficiente
                 or VentaResultCode.SinSucursalActiva
                 or VentaResultCode.VentaYaAnulada

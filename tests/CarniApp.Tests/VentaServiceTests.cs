@@ -527,6 +527,82 @@ public class VentaServiceTests : IDisposable
         Assert.Equal(100m, await SaldoDe(cliente));
     }
 
+    private Task<VentaResultDto<VentaDto>> VenderCreditoConPorcentaje(Guid cliente, Guid corteId, decimal? porcentaje, params string[] permisos) =>
+        Con(s => s.CrearAsync(
+            new CrearVentaRequest(
+                new[] { new VentaLineaRequest(corteId, 3m) },
+                new[] { new VentaPagoRequest(_creditoId, 300m) },
+                0m, cliente, null, porcentaje),
+            Usuario(), permisos));
+
+    [Fact]
+    public async Task Recargo_ConPermiso_SePuedeCambiarAlCobrar_YElTicketMuestraElNuevoPorcentaje()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderCreditoConPorcentaje(cliente, corte.Id, 8m, PermisosPos.AjustarRecargo);
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(24m, r.Datos!.RecargoCredito);
+        Assert.Equal(324m, r.Datos.Total);
+        Assert.Equal(324m, await SaldoDe(cliente));
+        var ticket = (await Con(s => s.ObtenerTicketAsync(r.Datos.Id))).Datos!.Texto;
+        Assert.Contains("Cargo por credito (8%)", ticket);
+        Assert.Contains("+$24.00", ticket);
+    }
+
+    [Fact]
+    public async Task Recargo_ConPermiso_PuedeQuitarseConCero()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderCreditoConPorcentaje(cliente, corte.Id, 0m, PermisosPos.AjustarRecargo);
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(0m, r.Datos!.RecargoCredito);
+        Assert.Equal(300m, r.Datos.Total);
+    }
+
+    [Fact]
+    public async Task Recargo_SinPermiso_NoPuedeCambiarse_PeroPuedeMandarElPorcentajePorDefecto()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var denegada = await VenderCreditoConPorcentaje(cliente, corte.Id, 0m);
+        Assert.Equal(VentaResultCode.RecargoNoAutorizado, denegada.Code);
+        Assert.Equal(0m, await SaldoDe(cliente));
+        Assert.Equal(10m, await StockDe(corte.Id));
+
+        var igualAlDefault = await VenderCreditoConPorcentaje(cliente, corte.Id, 5m);
+        Assert.True(igualAlDefault.Exitoso, igualAlDefault.Mensaje);
+        Assert.Equal(15m, igualAlDefault.Datos!.RecargoCredito);
+    }
+
+    [Fact]
+    public async Task Recargo_FueraDeRango_SeRechaza_AunConPermiso()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        Assert.Equal(VentaResultCode.RecargoInvalido, (await VenderCreditoConPorcentaje(cliente, corte.Id, -1m, PermisosPos.AjustarRecargo)).Code);
+        Assert.Equal(VentaResultCode.RecargoInvalido, (await VenderCreditoConPorcentaje(cliente, corte.Id, 30.01m, PermisosPos.AjustarRecargo)).Code);
+        Assert.True((await VenderCreditoConPorcentaje(cliente, corte.Id, 30m, PermisosPos.AjustarRecargo)).Exitoso);
+    }
+
+    [Fact]
+    public async Task Recargo_ElLimiteDeCreditoUsaElPorcentajeElegido()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 320m);
+
+        // 300 + 8% = 324 > 320
+        var r = await VenderCreditoConPorcentaje(cliente, corte.Id, 8m, PermisosPos.AjustarRecargo);
+        Assert.Equal(VentaResultCode.CreditoExcedido, r.Code);
+    }
+
     [Fact]
     public async Task Ticket_MuestraElCargoPorCredito_ConSuPorcentaje_YLaCantidadPedida()
     {

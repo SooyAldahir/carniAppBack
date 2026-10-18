@@ -214,8 +214,30 @@ public class VentaService : IVentaService
         // Lo fiado lleva un cargo (% configurable) que se suma a la deuda y al total, y
         // se imprime siempre en el ticket como renglon aparte.
         var creditoBase = pagosValidados.Pagos.Where(p => EsCredito(p.Metodo)).Sum(p => p.Importe);
+        var porcentajeRecargo = _posSettings.RecargoCreditoPorcentaje;
+        if (creditoBase > 0 && request.RecargoCreditoPorcentaje is { } pedido)
+        {
+            // Cambiar el % al cobrar: dentro del tope y solo con permiso. El ticket siempre
+            // muestra el % aplicado, asi que el cliente lo ve.
+            pedido = Math.Round(pedido, 2, MidpointRounding.AwayFromZero);
+            if (pedido < 0 || pedido > _posSettings.RecargoCreditoMaximoPorcentaje)
+            {
+                return Fail(VentaResultCode.RecargoInvalido, $"El cargo por credito debe estar entre 0% y {_posSettings.RecargoCreditoMaximoPorcentaje:0.##}%.");
+            }
+
+            if (pedido != porcentajeRecargo)
+            {
+                if (permisos?.Contains(PermisosPos.AjustarRecargo) != true)
+                {
+                    return Fail(VentaResultCode.RecargoNoAutorizado, "No tienes permiso para cambiar el porcentaje de cargo por credito.");
+                }
+
+                porcentajeRecargo = pedido;
+            }
+        }
+
         var recargo = creditoBase > 0
-            ? Math.Round(creditoBase * _posSettings.RecargoCreditoPorcentaje / 100m, 2, MidpointRounding.AwayFromZero)
+            ? Math.Round(creditoBase * porcentajeRecargo / 100m, 2, MidpointRounding.AwayFromZero)
             : 0m;
         var credito = creditoBase + recargo;
         if (credito > 0 && credito > cliente!.CreditoDisponible)

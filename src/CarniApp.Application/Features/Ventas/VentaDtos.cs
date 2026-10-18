@@ -26,12 +26,13 @@ public record CrearVentaRequest(
     IReadOnlyList<VentaPagoRequest> Pagos,
     decimal DescuentoTotal = 0m,
     Guid? ClienteId = null,
-    string? Nota = null);
+    string? Nota = null,
+    decimal? RecargoCreditoPorcentaje = null);
 
 public record TicketDto(string Texto);
 
 /// <summary>Reglas del POS que la app necesita mostrar al cobrar.</summary>
-public record PosConfigDto(decimal RecargoCreditoPorcentaje, decimal DescuentoMaximoSinAutorizacionPorcentaje);
+public record PosConfigDto(decimal RecargoCreditoPorcentaje, decimal DescuentoMaximoSinAutorizacionPorcentaje, decimal RecargoCreditoMaximoPorcentaje);
 
 public record AnularVentaRequest(string Motivo);
 
@@ -89,6 +90,8 @@ public enum VentaResultCode
     ClienteNoEncontrado,
     CreditoExcedido,
     NotaInvalida,
+    RecargoInvalido,
+    RecargoNoAutorizado,
     PagosNoCuadran,
     VentaNoEncontrada,
     VentaYaAnulada,

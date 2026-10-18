@@ -14,4 +14,7 @@ public interface IPosSettings
     /// ticket como "Cargo por credito". 0 = sin cargo.
     /// </summary>
     decimal RecargoCreditoPorcentaje { get; }
+
+    /// <summary>Tope del % de cargo que se puede fijar al cobrar (con 'pos.recargo.ajustar').</summary>
+    decimal RecargoCreditoMaximoPorcentaje { get; }
 }
