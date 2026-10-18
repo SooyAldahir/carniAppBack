@@ -151,6 +151,7 @@ public class CarniAppDbContext : DbContext
             entity.Property(v => v.Total).HasColumnType("decimal(10,2)");
             entity.Property(v => v.Estado).HasMaxLength(20);
             entity.Property(v => v.MotivoAnulacion).HasMaxLength(300);
+            entity.Property(v => v.Nota).HasMaxLength(200);
             entity.HasIndex(v => v.Fecha);
 
             entity.HasOne(v => v.Sucursal).WithMany().HasForeignKey(v => v.SucursalId);

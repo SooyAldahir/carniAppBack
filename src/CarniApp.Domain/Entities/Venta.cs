@@ -33,6 +33,9 @@ public class Venta
 
     public string Estado { get; set; } = EstadoVenta.Completada;
     public string? MotivoAnulacion { get; set; }
+
+    /// <summary>Nota libre de la venta (ej. "entregar en la puerta"); se imprime en el ticket.</summary>
+    public string? Nota { get; set; }
     public bool PendienteSincronizar { get; set; }
     public DateTime Fecha { get; set; } = DateTime.UtcNow;
 

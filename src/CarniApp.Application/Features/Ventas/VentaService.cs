@@ -121,6 +121,12 @@ public class VentaService : IVentaService
             return Fail(VentaResultCode.SinSucursalActiva, "No hay ninguna sucursal activa configurada.");
         }
 
+        var nota = string.IsNullOrWhiteSpace(request.Nota) ? null : request.Nota.Trim();
+        if (nota is { Length: > 200 })
+        {
+            return Fail(VentaResultCode.NotaInvalida, "La nota no puede pasar de 200 caracteres.");
+        }
+
         // 1) Lineas: corte vigente, cantidad valida, importe con el precio del servidor
         //    y descuento de linea (nunca mayor al importe bruto de esa linea).
         var lineas = new List<(Corte Corte, decimal Cantidad, decimal Bruto, decimal Descuento)>();
@@ -220,6 +226,7 @@ public class VentaService : IVentaService
             SucursalId = sucursal.Id,
             UsuarioId = usuarioId,
             ClienteId = cliente?.Id,
+            Nota = nota,
             Subtotal = subtotal,
             Descuento = descuentoTotal,
             Total = total,
@@ -478,7 +485,9 @@ public class VentaService : IVentaService
             .Select(p => new VentaPagoDto(p.MetodoPagoId, p.MetodoPago.Nombre, p.Importe))
             .ToList(),
         venta.ClienteId,
-        venta.Cliente?.Nombre);
+        venta.Cliente?.Nombre,
+        venta.Cliente?.Direccion,
+        venta.Nota);
 
     private async Task<Sucursal?> ObtenerSucursalPrincipalAsync(CancellationToken cancellationToken)
     {

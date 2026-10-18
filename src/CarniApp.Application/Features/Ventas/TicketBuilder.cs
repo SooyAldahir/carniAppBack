@@ -28,6 +28,10 @@ public static class TicketBuilder
         sb.AppendLine(Fila($"Folio: {venta.Folio}", local.ToString("dd/MM/yyyy HH:mm", Cultura)));
         if (!string.IsNullOrWhiteSpace(venta.UsuarioNombre)) sb.AppendLine(Recortar($"Atendio: {venta.UsuarioNombre}", Ancho));
         if (!string.IsNullOrWhiteSpace(venta.ClienteNombre)) sb.AppendLine(Recortar($"Cliente: {venta.ClienteNombre}", Ancho));
+        if (!string.IsNullOrWhiteSpace(venta.ClienteDireccion))
+        {
+            foreach (var l in Envolver($"Dir: {venta.ClienteDireccion}", Ancho)) sb.AppendLine(l);
+        }
         sb.AppendLine(Linea());
 
         foreach (var l in venta.Lineas)
@@ -54,9 +58,42 @@ public static class TicketBuilder
             sb.AppendLine(Centrar("*** VENTA ANULADA ***"));
         }
 
+        if (!string.IsNullOrWhiteSpace(venta.Nota))
+        {
+            sb.AppendLine(Linea());
+            foreach (var l in Envolver($"Nota: {venta.Nota}", Ancho)) sb.AppendLine(l);
+        }
+
         sb.AppendLine(Linea());
         sb.AppendLine(Centrar("Gracias por su compra"));
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>Parte el texto en lineas de maximo 'ancho' columnas, cortando por palabras.</summary>
+    private static IEnumerable<string> Envolver(string texto, int ancho)
+    {
+        var actual = new StringBuilder();
+        foreach (var palabra in texto.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var p = palabra;
+            while (p.Length > ancho)   // palabra mas larga que la linea: se corta
+            {
+                if (actual.Length > 0) { yield return actual.ToString(); actual.Clear(); }
+                yield return p[..ancho];
+                p = p[ancho..];
+            }
+
+            if (actual.Length > 0 && actual.Length + 1 + p.Length > ancho)
+            {
+                yield return actual.ToString();
+                actual.Clear();
+            }
+
+            if (actual.Length > 0) actual.Append(' ');
+            actual.Append(p);
+        }
+
+        if (actual.Length > 0) yield return actual.ToString();
     }
 
     private static string Dinero(decimal valor) => "$" + valor.ToString("N2", Cultura);

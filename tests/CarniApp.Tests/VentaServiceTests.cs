@@ -384,6 +384,49 @@ public class VentaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Ticket_ImprimeDireccionDelCliente_YLaNota_AjustadasA32Columnas()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, nombre: "Dona Lupe");
+        using (var ctx = _db.NuevoContexto())
+        {
+            ctx.Clientes.Single(c => c.Id == cliente).Direccion = "Av. Siempre Viva 742, Colonia Centro, entre Juarez y Morelos";
+            ctx.SaveChanges();
+        }
+
+        var venta = (await Con(s => s.CrearAsync(
+            new CrearVentaRequest(
+                new[] { new VentaLineaRequest(corte.Id, 1m) },
+                new[] { new VentaPagoRequest(_efectivoId, 100m) },
+                0m, cliente, "  Entregar en la puerta de atras, tocar dos veces  "),
+            Usuario()))).Datos!;
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
+
+        Assert.Contains("Dir: Av. Siempre Viva 742, Colonia", ticket);
+        Assert.Contains("Nota: Entregar en la puerta de atras,", ticket);
+        Assert.Contains("tocar dos veces", ticket);
+        Assert.All(ticket.Split('\n'), linea => Assert.True(linea.TrimEnd('\r').Length <= 32, $"Linea de mas de 32 columnas: '{linea}'"));
+        Assert.Equal("Entregar en la puerta de atras, tocar dos veces", venta.Nota);
+    }
+
+    [Fact]
+    public async Task Nota_Vacia_SeGuardaNula_YMuyLarga_SeRechaza()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var lineas = new[] { new VentaLineaRequest(corte.Id, 1m) };
+        var pagos = new[] { new VentaPagoRequest(_efectivoId, 100m) };
+
+        var sinNota = await Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, null, "   "), Usuario()));
+        Assert.True(sinNota.Exitoso, sinNota.Mensaje);
+        Assert.Null(sinNota.Datos!.Nota);
+
+        var larga = await Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, null, new string('x', 201)), Usuario()));
+        Assert.Equal(VentaResultCode.NotaInvalida, larga.Code);
+        Assert.Equal(9m, await StockDe(corte.Id));   // solo se vendio la primera
+    }
+
+    [Fact]
     public async Task Ticket_MuestraElNombreDelCliente()
     {
         var corte = await CorteConStock(10m, precio: 100m);
