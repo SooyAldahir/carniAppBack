@@ -14,6 +14,12 @@ public class VentaFacilService : IVentaFacilService
 {
     private const decimal PesoMaximoKg = 10000m;
 
+    /// <summary>Lotes pesados necesarios para que el sistema estime sin que el dueño pese.</summary>
+    public const int LotesParaAprender = 3;
+
+    /// <summary>Solo cuentan los ultimos lotes pesados, para seguir al proveedor/raza actual.</summary>
+    private const int VentanaLotes = 10;
+
     private readonly ITipoAnimalRepository _tipoRepository;
     private readonly ICorteRepository _corteRepository;
     private readonly ILoteAnimalRepository _loteRepository;
@@ -124,12 +130,12 @@ public class VentaFacilService : IVentaFacilService
             PesoKg = request.PesoKg,
             PrecioCompra = request.PrecioCompra,
             FechaCompra = request.FechaCompra ?? ahora,
-            EsEstimado = true,
             FechaCreacion = ahora
         };
         await _loteRepository.AddAsync(lote, cancellationToken);
 
-        var motivo = $"Venta Facil: lote {lote.Id.ToString()[..8]} de {reparto.Dto.TipoAnimalNombre} (estimado)";
+        lote.EsEstimado = reparto.Dto.EsEstimado;
+        var motivo = $"Venta Facil: lote {lote.Id.ToString()[..8]} de {reparto.Dto.TipoAnimalNombre} ({(lote.EsEstimado ? "estimado" : "pesado")})";
         foreach (var linea in reparto.Dto.Lineas)
         {
             // Sin Update(): la fila de Inventario ya esta rastreada (ver InventarioService).
@@ -200,31 +206,75 @@ public class VentaFacilService : IVentaFacilService
         if (tipo is null || !tipo.Activo) return (null, TipoNoEncontrado<RepartoDto>());
 
         var cortes = (await _corteRepository.ObtenerActivosPorTipoAnimalAsync(tipo.Id, cancellationToken))
-            .Where(c => c.UnidadVenta == UnidadVenta.Peso && c.RendimientoPorcentaje is > 0)
+            .Where(c => c.UnidadVenta == UnidadVenta.Peso)
             .ToList();
+        var historial = await _loteRepository.ObtenerHistorialMedidoAsync(tipo.Id, VentanaLotes, cancellationToken);
 
-        if (cortes.Count == 0)
+        List<RepartoLineaDto> lineas;
+        bool estimado;
+        string origen;
+
+        if (request.Cortes is { Count: > 0 })
         {
-            return (null, VentaFacilResultDto<RepartoDto>.Fail(
-                VentaFacilResultCode.SinRendimientos,
-                $"Configura primero los porcentajes de rendimiento de {tipo.Nombre}."));
+            // Kilos reales capturados por el dueño: lote MEDIDO.
+            var porId = cortes.ToDictionary(c => c.Id);
+            var vistos = new HashSet<Guid>();
+            foreach (var kg in request.Cortes)
+            {
+                if (!porId.ContainsKey(kg.CorteId) || !vistos.Add(kg.CorteId) || kg.Kg < 0)
+                {
+                    return (null, VentaFacilResultDto<RepartoDto>.Fail(
+                        VentaFacilResultCode.KgInvalido,
+                        "Hay un corte que no pertenece a ese animal, esta repetido o tiene kilos negativos."));
+                }
+            }
+
+            var total = request.Cortes.Sum(k => k.Kg);
+            if (total > request.PesoKg)
+            {
+                return (null, VentaFacilResultDto<RepartoDto>.Fail(
+                    VentaFacilResultCode.MedidoExcedePeso,
+                    $"Los cortes suman {total:0.###} kg y el animal pesa {request.PesoKg:0.###} kg."));
+            }
+
+            lineas = request.Cortes
+                .Select(k => (Corte: porId[k.CorteId], Kg: Math.Round(k.Kg, 3, MidpointRounding.AwayFromZero)))
+                .Where(x => x.Kg > 0)
+                .Select(x => ArmarLinea(x.Corte, x.Kg, x.Kg / request.PesoKg * 100m))
+                .ToList();
+
+            if (lineas.Count == 0)
+            {
+                return (null, VentaFacilResultDto<RepartoDto>.Fail(VentaFacilResultCode.KgInvalido, "Captura los kilos de al menos un corte."));
+            }
+
+            estimado = false;
+            origen = "Pesado";
+        }
+        else
+        {
+            var (porcentajes, usaAprendido) = ResolverPorcentajes(cortes, historial);
+            if (porcentajes.Count == 0)
+            {
+                return (null, VentaFacilResultDto<RepartoDto>.Fail(
+                    VentaFacilResultCode.SinRendimientos,
+                    $"Aun no hay historial de {tipo.Nombre}: captura los kilos reales de cada corte."));
+            }
+
+            lineas = cortes
+                .Where(c => porcentajes.ContainsKey(c.Id))
+                .Select(c => ArmarLinea(
+                    c,
+                    Math.Round(request.PesoKg * porcentajes[c.Id] / 100m, 3, MidpointRounding.AwayFromZero),
+                    porcentajes[c.Id]))
+                .Where(l => l.KgEstimados > 0)
+                .ToList();
+
+            estimado = true;
+            origen = usaAprendido ? "Aprendido" : "Configurado";
         }
 
-        var lineas = cortes
-            .Select(c =>
-            {
-                var kg = Math.Round(request.PesoKg * c.RendimientoPorcentaje!.Value / 100m, 3, MidpointRounding.AwayFromZero);
-                return new RepartoLineaDto(
-                    c.Id,
-                    c.Nombre,
-                    c.RendimientoPorcentaje.Value,
-                    kg,
-                    c.PrecioBase,
-                    Math.Round(kg * c.PrecioBase, 2, MidpointRounding.AwayFromZero));
-            })
-            .Where(l => l.KgEstimados > 0)
-            .OrderByDescending(l => l.KgEstimados)
-            .ToList();
+        lineas = lineas.OrderByDescending(l => l.KgEstimados).ToList();
 
         var asignados = lineas.Sum(l => l.KgEstimados);
         var venta = lineas.Sum(l => l.VentaEstimada);
@@ -239,20 +289,81 @@ public class VentaFacilService : IVentaFacilService
             request.PesoKg - asignados,
             CostoPorKg(request.PrecioCompra, request.PesoKg),
             venta,
-            venta - request.PrecioCompra);
+            venta - request.PrecioCompra,
+            estimado,
+            origen,
+            historial.Lotes,
+            LotesParaAprender);
 
         return (new Calculo(dto), null);
     }
 
     private async Task<RendimientosDto> ArmarRendimientosAsync(Guid tipoAnimalId, CancellationToken cancellationToken)
     {
-        var items = (await _corteRepository.ObtenerActivosPorTipoAnimalAsync(tipoAnimalId, cancellationToken))
+        var cortes = (await _corteRepository.ObtenerActivosPorTipoAnimalAsync(tipoAnimalId, cancellationToken))
             .Where(c => c.UnidadVenta == UnidadVenta.Peso)
-            .Select(c => new RendimientoItemDto(c.Id, c.Nombre, c.PrecioBase, c.RendimientoPorcentaje))
+            .ToList();
+        var historial = await _loteRepository.ObtenerHistorialMedidoAsync(tipoAnimalId, VentanaLotes, cancellationToken);
+        var aprendidos = Aprendidos(historial);
+
+        var items = cortes
+            .Select(c => new RendimientoItemDto(
+                c.Id,
+                c.Nombre,
+                c.PrecioBase,
+                c.RendimientoPorcentaje,
+                aprendidos.TryGetValue(c.Id, out var a) ? a : null))
             .ToList();
 
-        return new RendimientosDto(tipoAnimalId, items, items.Sum(i => i.Porcentaje ?? 0m));
+        return new RendimientosDto(
+            tipoAnimalId,
+            items,
+            items.Sum(i => i.Porcentaje ?? 0m),
+            historial.Lotes,
+            LotesParaAprender,
+            historial.Lotes >= LotesParaAprender && aprendidos.Count > 0);
     }
+
+    /// <summary>% de cada corte = kg acumulados / peso acumulado de los lotes pesados (promedio ponderado).</summary>
+    private static Dictionary<Guid, decimal> Aprendidos(HistorialRendimiento historial)
+    {
+        var resultado = new Dictionary<Guid, decimal>();
+        if (historial.PesoTotalKg <= 0) return resultado;
+
+        foreach (var (corteId, kg) in historial.KgPorCorte)
+        {
+            if (kg > 0) resultado[corteId] = Math.Round(kg / historial.PesoTotalKg * 100m, 4, MidpointRounding.AwayFromZero);
+        }
+
+        return resultado;
+    }
+
+    /// <summary>Con suficiente historial pesado usa lo aprendido; si no, los porcentajes configurados a mano.</summary>
+    private static (Dictionary<Guid, decimal> Porcentajes, bool UsaAprendido) ResolverPorcentajes(
+        IReadOnlyList<Corte> cortes,
+        HistorialRendimiento historial)
+    {
+        if (historial.Lotes >= LotesParaAprender)
+        {
+            var aprendidos = Aprendidos(historial);
+            var activos = cortes.Where(c => aprendidos.ContainsKey(c.Id)).ToDictionary(c => c.Id, c => aprendidos[c.Id]);
+            if (activos.Count > 0) return (activos, true);
+        }
+
+        var manuales = cortes
+            .Where(c => c.RendimientoPorcentaje is > 0)
+            .ToDictionary(c => c.Id, c => c.RendimientoPorcentaje!.Value);
+        return (manuales, false);
+    }
+
+    private static RepartoLineaDto ArmarLinea(Corte corte, decimal kg, decimal porcentaje) =>
+        new(
+            corte.Id,
+            corte.Nombre,
+            Math.Round(porcentaje, 2, MidpointRounding.AwayFromZero),
+            kg,
+            corte.PrecioBase,
+            Math.Round(kg * corte.PrecioBase, 2, MidpointRounding.AwayFromZero));
 
     private static decimal CostoPorKg(decimal precio, decimal peso) =>
         peso <= 0 ? 0 : Math.Round(precio / peso, 2, MidpointRounding.AwayFromZero);

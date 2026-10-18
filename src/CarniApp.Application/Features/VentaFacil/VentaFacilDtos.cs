@@ -1,15 +1,37 @@
 namespace CarniApp.Application.Features.VentaFacil;
 
-/// <summary>Un corte por peso del tipo de animal con su % de rendimiento (null = sin configurar).</summary>
-public record RendimientoItemDto(Guid CorteId, string CorteNombre, decimal PrecioBase, decimal? Porcentaje);
+/// <summary>
+/// Un corte por peso del tipo de animal. Porcentaje = configurado a mano (respaldo,
+/// null = sin configurar); PorcentajeAprendido = promedio de los lotes pesados (null = sin datos).
+/// </summary>
+public record RendimientoItemDto(Guid CorteId, string CorteNombre, decimal PrecioBase, decimal? Porcentaje, decimal? PorcentajeAprendido);
 
-public record RendimientosDto(Guid TipoAnimalId, IReadOnlyList<RendimientoItemDto> Cortes, decimal TotalPorcentaje);
+/// <summary>UsaAprendido = ya hay suficientes lotes pesados (LotesParaAprender) para estimar sin pesar.</summary>
+public record RendimientosDto(
+    Guid TipoAnimalId,
+    IReadOnlyList<RendimientoItemDto> Cortes,
+    decimal TotalPorcentaje,
+    int LotesMedidos,
+    int LotesParaAprender,
+    bool UsaAprendido);
 
 public record RendimientoEntradaDto(Guid CorteId, decimal? Porcentaje);
 
 public record GuardarRendimientosRequest(Guid TipoAnimalId, IReadOnlyList<RendimientoEntradaDto> Cortes);
 
-public record LoteRequest(Guid TipoAnimalId, decimal PesoKg, decimal PrecioCompra, DateTime? FechaCompra = null);
+/// <summary>Kilos reales (pesados) de un corte del animal.</summary>
+public record KgCorteDto(Guid CorteId, decimal Kg);
+
+/// <summary>
+/// Cortes = null o vacio: el reparto se ESTIMA con los porcentajes (aprendidos o configurados).
+/// Cortes con kilos: el lote queda como MEDIDO y alimenta el aprendizaje.
+/// </summary>
+public record LoteRequest(
+    Guid TipoAnimalId,
+    decimal PesoKg,
+    decimal PrecioCompra,
+    DateTime? FechaCompra = null,
+    IReadOnlyList<KgCorteDto>? Cortes = null);
 
 /// <summary>Linea del reparto estimado: kg y valor de venta a precio base.</summary>
 public record RepartoLineaDto(
@@ -30,7 +52,11 @@ public record RepartoDto(
     decimal KgMerma,
     decimal CostoPorKg,
     decimal VentaEstimadaTotal,
-    decimal UtilidadEstimada);
+    decimal UtilidadEstimada,
+    bool EsEstimado,
+    string Origen,
+    int LotesMedidos,
+    int LotesParaAprender);
 
 public record LoteDto(
     Guid Id,
@@ -50,6 +76,8 @@ public enum VentaFacilResultCode
     PrecioInvalido,
     PorcentajeInvalido,
     SumaExcede100,
+    KgInvalido,
+    MedidoExcedePeso,
     CorteInvalido,
     SinRendimientos,
     SinSucursalActiva,

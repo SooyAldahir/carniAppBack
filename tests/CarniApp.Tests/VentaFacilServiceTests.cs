@@ -273,4 +273,150 @@ public class VentaFacilServiceTests : IDisposable
         Assert.Equal(50m, l.CostoPorKg);
         Assert.True(l.EsEstimado);
     }
+
+    // ------------------------------------------------ lotes pesados y aprendizaje
+
+    private Task<VentaFacilResultDto<RepartoDto>> Pesar(Guid tipoId, decimal peso, params (Guid Corte, decimal Kg)[] kgs)
+    {
+        var usuario = _db.SembrarUsuarioParaMovimientos();
+        return Run(s => s.RegistrarLoteAsync(
+            new LoteRequest(tipoId, peso, peso * 50m, null, kgs.Select(k => new KgCorteDto(k.Corte, k.Kg)).ToList()),
+            usuario.Id));
+    }
+
+    [Fact]
+    public async Task LotePesado_QuedaMedido_ConLosKgCapturados()
+    {
+        var (tipo, bistec, molida) = Sembrar();
+
+        var r = await Pesar(tipo.Id, 200m, (bistec.Id, 70m), (molida.Id, 90m));
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.False(r.Datos!.EsEstimado);
+        Assert.Equal("Pesado", r.Datos.Origen);
+        using var ctx = _db.NuevoContexto();
+        Assert.False((await ctx.LotesAnimal.SingleAsync()).EsEstimado);
+        var stock = await ctx.Inventarios.ToDictionaryAsync(i => i.CorteId, i => i.StockActual);
+        Assert.Equal(70m, stock[bistec.Id]);
+        Assert.Equal(90m, stock[molida.Id]);
+    }
+
+    [Fact]
+    public async Task LotePesado_RechazaKgMayoresAlPeso_YDatosInvalidos()
+    {
+        var (tipo, bistec, molida) = Sembrar();
+
+        var exceso = await Pesar(tipo.Id, 100m, (bistec.Id, 60m), (molida.Id, 50m));
+        Assert.Equal(VentaFacilResultCode.MedidoExcedePeso, exceso.Code);
+
+        var negativo = await Pesar(tipo.Id, 100m, (bistec.Id, -1m));
+        Assert.Equal(VentaFacilResultCode.KgInvalido, negativo.Code);
+
+        var repetido = await Pesar(tipo.Id, 100m, (bistec.Id, 10m), (bistec.Id, 10m));
+        Assert.Equal(VentaFacilResultCode.KgInvalido, repetido.Code);
+
+        var ajeno = await Pesar(tipo.Id, 100m, (Guid.NewGuid(), 10m));
+        Assert.Equal(VentaFacilResultCode.KgInvalido, ajeno.Code);
+
+        var todoCero = await Pesar(tipo.Id, 100m, (bistec.Id, 0m));
+        Assert.Equal(VentaFacilResultCode.KgInvalido, todoCero.Code);
+
+        using var ctx = _db.NuevoContexto();
+        Assert.Equal(0, await ctx.LotesAnimal.CountAsync());
+    }
+
+    [Fact]
+    public async Task LotePesado_PermiteTipoSinPorcentajesConfigurados()
+    {
+        var (tipo, bistec, _) = Sembrar(bistec: null, molida: null);
+        var r = await Pesar(tipo.Id, 100m, (bistec.Id, 40m));
+        Assert.True(r.Exitoso, r.Mensaje);
+    }
+
+    [Fact]
+    public async Task SinHistorialNiConfiguracion_PideCapturarKilos()
+    {
+        var (tipo, _, _) = Sembrar(bistec: null, molida: null);
+        var r = await Run(s => s.PrevisualizarAsync(new LoteRequest(tipo.Id, 100m, 5000m)));
+        Assert.Equal(VentaFacilResultCode.SinRendimientos, r.Code);
+    }
+
+    [Fact]
+    public async Task ConMenosDeTresLotesPesados_UsaLoConfigurado()
+    {
+        var (tipo, bistec, molida) = Sembrar();   // configurado: 30% / 50%
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m), (molida.Id, 20m));
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m), (molida.Id, 20m));
+
+        var r = await Run(s => s.PrevisualizarAsync(new LoteRequest(tipo.Id, 100m, 5000m)));
+
+        Assert.Equal("Configurado", r.Datos!.Origen);
+        Assert.True(r.Datos.EsEstimado);
+        Assert.Equal(2, r.Datos.LotesMedidos);
+        Assert.Equal(30m, r.Datos.Lineas.Single(l => l.CorteNombre == "Bistec").KgEstimados);
+    }
+
+    [Fact]
+    public async Task ConTresLotesPesados_AprendeYEstimaSinPesar()
+    {
+        var (tipo, bistec, molida) = Sembrar();   // la config manual (30/50) debe ignorarse
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m), (molida.Id, 40m));
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m), (molida.Id, 40m));
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m), (molida.Id, 40m));
+
+        var r = await Run(s => s.PrevisualizarAsync(new LoteRequest(tipo.Id, 250m, 12500m)));
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal("Aprendido", r.Datos!.Origen);
+        Assert.True(r.Datos.EsEstimado);
+        Assert.Equal(50m, r.Datos.Lineas.Single(l => l.CorteNombre == "Bistec").KgEstimados);   // 20% de 250
+        Assert.Equal(100m, r.Datos.Lineas.Single(l => l.CorteNombre == "Molida").KgEstimados);  // 40% de 250
+        Assert.Equal(100m, r.Datos.KgMerma);
+    }
+
+    [Fact]
+    public async Task Aprendizaje_EsPromedioPonderadoPorPeso()
+    {
+        var (tipo, bistec, _) = Sembrar();
+        await Pesar(tipo.Id, 100m, (bistec.Id, 10m));    // 10%
+        await Pesar(tipo.Id, 300m, (bistec.Id, 90m));    // 30%
+        await Pesar(tipo.Id, 100m, (bistec.Id, 20m));    // 20%  -> 120 kg / 500 kg = 24%
+
+        var r = await Run(s => s.PrevisualizarAsync(new LoteRequest(tipo.Id, 100m, 5000m)));
+
+        Assert.Equal("Aprendido", r.Datos!.Origen);
+        Assert.Equal(24m, r.Datos.Lineas.Single().KgEstimados);
+    }
+
+    [Fact]
+    public async Task LotesEstimados_NoAlimentanElAprendizaje()
+    {
+        var (tipo, bistec, molida) = Sembrar();
+        var usuario = _db.SembrarUsuarioParaMovimientos();
+        for (var i = 0; i < 3; i++)
+        {
+            await Run(s => s.RegistrarLoteAsync(new LoteRequest(tipo.Id, 100m, 5000m), usuario.Id));   // estimados
+        }
+
+        var r = await Run(s => s.PrevisualizarAsync(new LoteRequest(tipo.Id, 100m, 5000m)));
+
+        Assert.Equal("Configurado", r.Datos!.Origen);
+        Assert.Equal(0, r.Datos.LotesMedidos);
+    }
+
+    [Fact]
+    public async Task Rendimientos_ExponeLoAprendidoYSiYaSeUsa()
+    {
+        var (tipo, bistec, _) = Sembrar();
+        var antes = await Run(s => s.ObtenerRendimientosAsync(tipo.Id));
+        Assert.False(antes.Datos!.UsaAprendido);
+        Assert.Null(antes.Datos.Cortes.Single(c => c.CorteId == bistec.Id).PorcentajeAprendido);
+
+        for (var i = 0; i < 3; i++) await Pesar(tipo.Id, 100m, (bistec.Id, 25m));
+
+        var despues = await Run(s => s.ObtenerRendimientosAsync(tipo.Id));
+        Assert.True(despues.Datos!.UsaAprendido);
+        Assert.Equal(3, despues.Datos.LotesMedidos);
+        Assert.Equal(25m, despues.Datos.Cortes.Single(c => c.CorteId == bistec.Id).PorcentajeAprendido);
+    }
 }
