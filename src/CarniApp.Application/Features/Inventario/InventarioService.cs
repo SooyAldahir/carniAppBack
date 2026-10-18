@@ -94,6 +94,18 @@ public class InventarioService : IInventarioService
                 "Tipo de movimiento invalido. Usa 'Entrada', 'Merma' o 'Ajuste'.");
         }
 
+        // El signo debe ser coherente con el tipo: una Entrada suma, una Merma resta.
+        // ('Ajuste' puede ser en cualquier sentido.) Evita que un cliente mal hecho
+        // registre una merma positiva y la deje SUMANDO stock.
+        var esEntrada = request.TipoMovimiento.Equals("Entrada", StringComparison.OrdinalIgnoreCase);
+        var esMerma = request.TipoMovimiento.Equals("Merma", StringComparison.OrdinalIgnoreCase);
+        if ((esEntrada && request.Cantidad < 0) || (esMerma && request.Cantidad > 0))
+        {
+            return InventarioResultDto<InventarioItemDto>.Fail(
+                InventarioResultCode.CantidadInvalida,
+                esEntrada ? "Una entrada debe tener cantidad positiva." : "Una merma debe tener cantidad negativa.");
+        }
+
         var corte = await _corteRepository.GetByIdConTipoAnimalAsync(request.CorteId, cancellationToken);
         if (corte is null)
         {
