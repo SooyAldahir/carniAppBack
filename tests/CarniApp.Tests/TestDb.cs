@@ -14,6 +14,12 @@ public class FakeClock : IDateTimeProvider
     public void Avanzar(TimeSpan t) => Now += t;
 }
 
+public class FakePosSettings : IPosSettings
+{
+    public decimal Maximo { get; set; } = 10m;
+    public decimal DescuentoMaximoSinAutorizacionPorcentaje => Maximo;
+}
+
 /// <summary>
 /// Base de datos SQLite en memoria con el DbContext REAL. Cada llamada a
 /// NuevoContexto() simula un request HTTP distinto (change tracker limpio),

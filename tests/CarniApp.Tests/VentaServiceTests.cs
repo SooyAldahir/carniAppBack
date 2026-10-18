@@ -40,8 +40,12 @@ public class VentaServiceTests : IDisposable
         new InventarioRepository(ctx),
         new MovimientoInventarioRepository(ctx),
         new Repository<Sucursal>(ctx),
+        new Repository<CarniApp.Domain.Entities.Negocio>(ctx),
+        _posSettings,
         new UnitOfWork(ctx),
         _clock);
+
+    private readonly FakePosSettings _posSettings = new();
 
     private async Task<T> Con<T>(Func<VentaService, Task<T>> accion)
     {
@@ -90,6 +94,13 @@ public class VentaServiceTests : IDisposable
 
     private Task<VentaResultDto<VentaDto>> Vender(IReadOnlyList<VentaLineaRequest> lineas, IReadOnlyList<VentaPagoRequest> pagos) =>
         Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos), Usuario()));
+
+    private Task<VentaResultDto<VentaDto>> VenderConDescuento(
+        IReadOnlyList<VentaLineaRequest> lineas,
+        IReadOnlyList<VentaPagoRequest> pagos,
+        decimal descuentoTotal,
+        params string[] permisos) =>
+        Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, descuentoTotal), Usuario(), permisos));
 
     private Task<VentaResultDto<VentaDto>> VenderUno(Corte corte, decimal cantidad, decimal totalEsperado) =>
         Vender(new[] { new VentaLineaRequest(corte.Id, cantidad) }, new[] { new VentaPagoRequest(_efectivoId, totalEsperado) });
@@ -364,5 +375,188 @@ public class VentaServiceTests : IDisposable
         await Assert.ThrowsAsync<ConcurrencyConflictException>(() => new UnitOfWork(ctxB).SaveChangesAsync());
 
         Assert.Equal(0m, await StockDe(corte.Id));
+    }
+
+    // ---------------- Sprint 5: descuentos, venta mixta y ticket ----------------
+
+    [Fact]
+    public async Task Descuento_DeLinea_ReduceElTotal_YSeConservaEnElTicket()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        // 2 kg x 100 = 200, con $10 de descuento en la linea (5%) -> total 190.
+        var r = await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 2m, 10m) },
+            new[] { new VentaPagoRequest(_efectivoId, 190m) },
+            0m,
+            PermisosPos.Descuento);
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(200m, r.Datos!.Subtotal);
+        Assert.Equal(10m, r.Datos.Descuento);
+        Assert.Equal(190m, r.Datos.Total);
+        Assert.Equal(10m, r.Datos.Lineas.Single().Descuento);
+        Assert.Equal(190m, r.Datos.Lineas.Single().Importe);
+
+        // Al releer el ticket el descuento de linea se reconstruye igual.
+        var releida = (await Con(s => s.ObtenerAsync(r.Datos.Id))).Datos!;
+        Assert.Equal(10m, releida.Lineas.Single().Descuento);
+    }
+
+    [Fact]
+    public async Task Descuento_Global_SeAplicaDespuesDelDeLinea()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        // 300 bruto - 10 (linea) - 20 (global) = 270. 10% de 300 = 30 -> justo en el limite.
+        var r = await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 3m, 10m) },
+            new[] { new VentaPagoRequest(_efectivoId, 270m) },
+            20m,
+            PermisosPos.Descuento);
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(300m, r.Datos!.Subtotal);
+        Assert.Equal(30m, r.Datos.Descuento);
+        Assert.Equal(270m, r.Datos.Total);
+    }
+
+    [Fact]
+    public async Task Descuento_SinPermiso_EsRechazado()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        var r = await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 95m) },
+            5m);   // sin permisos
+
+        Assert.Equal(VentaResultCode.DescuentoNoAutorizado, r.Code);
+        Assert.Equal(10m, await StockDe(corte.Id));
+    }
+
+    [Fact]
+    public async Task Descuento_QuePasaDelPorcentajePermitido_RequierePermisoAlto()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var linea = new[] { new VentaLineaRequest(corte.Id, 1m) };
+        var pago = new[] { new VentaPagoRequest(_efectivoId, 80m) };   // 20% de descuento
+
+        var basico = await VenderConDescuento(linea, pago, 20m, PermisosPos.Descuento);
+        Assert.Equal(VentaResultCode.DescuentoNoAutorizado, basico.Code);
+
+        var alto = await VenderConDescuento(linea, pago, 20m, PermisosPos.DescuentoAlto);
+        Assert.True(alto.Exitoso, alto.Mensaje);
+    }
+
+    [Fact]
+    public async Task Descuento_ElTopeBasicoEsConfigurable()
+    {
+        _posSettings.Maximo = 25m;
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        var r = await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 80m) },
+            20m,
+            PermisosPos.Descuento);
+
+        Assert.True(r.Exitoso, r.Mensaje);
+    }
+
+    [Fact]
+    public async Task Descuento_Invalido_SeRechaza()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var pago = new[] { new VentaPagoRequest(_efectivoId, 100m) };
+
+        // Negativo, mayor a la linea, global mayor al total, o que deja el total en cero.
+        Assert.Equal(VentaResultCode.DescuentoInvalido, (await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m, -1m) }, pago, 0m, PermisosPos.DescuentoAlto)).Code);
+        Assert.Equal(VentaResultCode.DescuentoInvalido, (await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m, 150m) }, pago, 0m, PermisosPos.DescuentoAlto)).Code);
+        Assert.Equal(VentaResultCode.DescuentoInvalido, (await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m) }, pago, 101m, PermisosPos.DescuentoAlto)).Code);
+        Assert.Equal(VentaResultCode.DescuentoInvalido, (await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m) }, pago, 100m, PermisosPos.DescuentoAlto)).Code);
+    }
+
+    [Fact]
+    public async Task Descuento_LosPagosDebenCuadrarConElTotalYaConDescuento()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        var r = await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m) },   // ignora el descuento
+            5m,
+            PermisosPos.Descuento);
+
+        Assert.Equal(VentaResultCode.PagosNoCuadran, r.Code);
+    }
+
+    [Fact]
+    public async Task VentaMixta_PesoYPieza_EnUnMismoTicket_DescuentaCadaStock()
+    {
+        var res = await CorteConStock(10m, precio: 120m, nombre: "Bistec");
+        var chorizo = await CorteConStock(20m, precio: 45m, nombre: "Chorizo", unidad: UnidadVenta.Pieza);
+
+        var r = await Vender(
+            new[] { new VentaLineaRequest(res.Id, 1.5m), new VentaLineaRequest(chorizo.Id, 4m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m), new VentaPagoRequest(_tarjetaId, 260m) });
+
+        // 1.5 x 120 = 180, 4 x 45 = 180 -> 360
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(360m, r.Datos!.Total);
+        Assert.Equal(2, r.Datos.Lineas.Count);
+        Assert.Equal(8.5m, await StockDe(res.Id));
+        Assert.Equal(16m, await StockDe(chorizo.Id));
+    }
+
+    [Fact]
+    public async Task Ticket_IncluyeFolio_Lineas_Descuento_Total_YPagos_En32Columnas()
+    {
+        using (var ctx = _db.NuevoContexto())
+        {
+            ctx.Negocios.Add(new CarniApp.Domain.Entities.Negocio
+            {
+                NombreComercial = "Carniceria Don Pepe",
+                Direccion = "Calle 5 #10",
+                Telefono = "5551234567",
+                ZonaHoraria = "UTC"
+            });
+            await ctx.SaveChangesAsync();
+        }
+
+        var corte = await CorteConStock(10m, precio: 100m, nombre: "Costilla");
+        var venta = (await VenderConDescuento(
+            new[] { new VentaLineaRequest(corte.Id, 2m, 10m) },
+            new[] { new VentaPagoRequest(_efectivoId, 190m) },
+            0m,
+            PermisosPos.Descuento)).Datos!;
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
+
+        Assert.Contains("Carniceria Don Pepe", ticket);
+        Assert.Contains("Costilla", ticket);
+        Assert.Contains("2 kg x $100.00", ticket);
+        Assert.Contains("-$10.00", ticket);
+        Assert.Contains("TOTAL", ticket);
+        Assert.Contains("$190.00", ticket);
+        Assert.Contains("Efectivo", ticket);
+        Assert.All(ticket.Split('\n'), linea => Assert.True(linea.TrimEnd('\r').Length <= TicketBuilder.Ancho, $"Linea mas ancha que {TicketBuilder.Ancho}: '{linea}'"));
+    }
+
+    [Fact]
+    public async Task Ticket_DeVentaAnulada_LoIndica_YDeVentaInexistenteFalla()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var venta = (await VenderUno(corte, 1m, 100m)).Datos!;
+        await Con(s => s.AnularAsync(venta.Id, "Prueba", Usuario()));
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
+
+        Assert.Contains("VENTA ANULADA", ticket);
+        Assert.Equal(VentaResultCode.VentaNoEncontrada, (await Con(s => s.ObtenerTicketAsync(Guid.NewGuid()))).Code);
     }
 }

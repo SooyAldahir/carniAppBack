@@ -1,0 +1,11 @@
+namespace CarniApp.Application.Common.Interfaces;
+
+/// <summary>Reglas configurables del punto de venta (appsettings: seccion 'Pos').</summary>
+public interface IPosSettings
+{
+    /// <summary>
+    /// Descuento maximo (% del subtotal) que se puede dar con el permiso basico
+    /// 'pos.descuento'. Por encima se necesita 'pos.descuento.alto' (RF-POS-004).
+    /// </summary>
+    decimal DescuentoMaximoSinAutorizacionPorcentaje { get; }
+}

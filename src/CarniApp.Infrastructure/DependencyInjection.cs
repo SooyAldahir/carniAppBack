@@ -40,6 +40,7 @@ public static class DependencyInjection
         services.AddScoped<IVentaRepository, Persistence.VentaRepository>();
 
         services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
+        services.AddSingleton<IPosSettings, PosSettings>();
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddScoped<ITokenService, TokenService>();
 

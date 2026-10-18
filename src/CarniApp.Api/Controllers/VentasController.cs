@@ -2,6 +2,7 @@ using System.Security.Claims;
 using CarniApp.Api.Security;
 using CarniApp.Application.Common.Interfaces;
 using CarniApp.Application.Features.Ventas;
+using CarniApp.Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -52,10 +53,20 @@ public class VentasController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> Crear(CrearVentaRequest request, CancellationToken cancellationToken)
     {
-        var resultado = await _ventaService.CrearAsync(request, UsuarioActualId(), cancellationToken);
+        var permisos = User.FindAll(TokenService.PermisoClaimType).Select(c => c.Value).ToList();
+        var resultado = await _ventaService.CrearAsync(request, UsuarioActualId(), permisos, cancellationToken);
         return resultado.Exitoso
             ? CreatedAtAction(nameof(Obtener), new { id = resultado.Datos!.Id }, resultado.Datos)
             : ResponderConResultado(resultado);
+    }
+
+    /// <summary>RF-POS-010: ticket en texto plano de 32 columnas (digital hoy, impresion en el sprint de hardware).</summary>
+    [PermisoAuthorize("pos.vender")]
+    [HttpGet("{id:guid}/ticket")]
+    public async Task<IActionResult> Ticket(Guid id, CancellationToken cancellationToken)
+    {
+        var resultado = await _ventaService.ObtenerTicketAsync(id, cancellationToken);
+        return resultado.Exitoso ? Ok(resultado.Datos) : NotFound(new { mensaje = resultado.Mensaje });
     }
 
     [PermisoAuthorize("pos.anular")]
@@ -72,6 +83,7 @@ public class VentasController : ControllerBase
         return resultado.Code switch
         {
             VentaResultCode.VentaNoEncontrada => NotFound(new { mensaje = resultado.Mensaje }),
+            VentaResultCode.DescuentoNoAutorizado => StatusCode(StatusCodes.Status403Forbidden, new { mensaje = resultado.Mensaje }),
             VentaResultCode.StockInsuficiente
                 or VentaResultCode.SinSucursalActiva
                 or VentaResultCode.VentaYaAnulada

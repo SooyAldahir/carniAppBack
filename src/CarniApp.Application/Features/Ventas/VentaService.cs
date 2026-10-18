@@ -4,6 +4,7 @@ using CarniApp.Domain.Entities;
 
 // 'Inventario' tambien es un namespace hermano (Features.Inventario): alias para la entidad.
 using InventarioEntidad = CarniApp.Domain.Entities.Inventario;
+using NegocioEntidad = CarniApp.Domain.Entities.Negocio;
 
 namespace CarniApp.Application.Features.Ventas;
 
@@ -25,6 +26,8 @@ public class VentaService : IVentaService
     private readonly IInventarioRepository _inventarioRepository;
     private readonly IMovimientoInventarioRepository _movimientoRepository;
     private readonly IRepository<Sucursal> _sucursalRepository;
+    private readonly IRepository<NegocioEntidad> _negocioRepository;
+    private readonly IPosSettings _posSettings;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IDateTimeProvider _dateTimeProvider;
 
@@ -35,6 +38,8 @@ public class VentaService : IVentaService
         IInventarioRepository inventarioRepository,
         IMovimientoInventarioRepository movimientoRepository,
         IRepository<Sucursal> sucursalRepository,
+        IRepository<NegocioEntidad> negocioRepository,
+        IPosSettings posSettings,
         IUnitOfWork unitOfWork,
         IDateTimeProvider dateTimeProvider)
     {
@@ -44,6 +49,8 @@ public class VentaService : IVentaService
         _inventarioRepository = inventarioRepository;
         _movimientoRepository = movimientoRepository;
         _sucursalRepository = sucursalRepository;
+        _negocioRepository = negocioRepository;
+        _posSettings = posSettings;
         _unitOfWork = unitOfWork;
         _dateTimeProvider = dateTimeProvider;
     }
@@ -97,7 +104,7 @@ public class VentaService : IVentaService
             : VentaResultDto<VentaDto>.Ok(Mapear(venta));
     }
 
-    public async Task<VentaResultDto<VentaDto>> CrearAsync(CrearVentaRequest request, Guid usuarioId, CancellationToken cancellationToken = default)
+    public async Task<VentaResultDto<VentaDto>> CrearAsync(CrearVentaRequest request, Guid usuarioId, IReadOnlyCollection<string>? permisos = null, CancellationToken cancellationToken = default)
     {
         if (request.Lineas is null || request.Lineas.Count == 0)
         {
@@ -110,8 +117,9 @@ public class VentaService : IVentaService
             return Fail(VentaResultCode.SinSucursalActiva, "No hay ninguna sucursal activa configurada.");
         }
 
-        // 1) Lineas: corte vigente, cantidad valida, importe con el precio del servidor.
-        var lineas = new List<(Corte Corte, decimal Cantidad, decimal Importe)>();
+        // 1) Lineas: corte vigente, cantidad valida, importe con el precio del servidor
+        //    y descuento de linea (nunca mayor al importe bruto de esa linea).
+        var lineas = new List<(Corte Corte, decimal Cantidad, decimal Bruto, decimal Descuento)>();
         foreach (var linea in request.Lineas)
         {
             var corte = await _corteRepository.GetByIdConTipoAnimalAsync(linea.CorteId, cancellationToken);
@@ -130,11 +138,34 @@ public class VentaService : IVentaService
                 return Fail(VentaResultCode.CantidadInvalida, $"'{corte.Nombre}' se vende por pieza: la cantidad debe ser un numero entero.");
             }
 
-            var importe = Math.Round(linea.Cantidad * corte.PrecioBase, 2, MidpointRounding.AwayFromZero);
-            lineas.Add((corte, linea.Cantidad, importe));
+            var bruto = Math.Round(linea.Cantidad * corte.PrecioBase, 2, MidpointRounding.AwayFromZero);
+            var descuento = Math.Round(linea.Descuento, 2, MidpointRounding.AwayFromZero);
+            if (descuento < 0 || descuento > bruto)
+            {
+                return Fail(VentaResultCode.DescuentoInvalido, $"El descuento de '{corte.Nombre}' debe estar entre 0 y {bruto:0.00}.");
+            }
+
+            lineas.Add((corte, linea.Cantidad, bruto, descuento));
         }
 
-        var total = lineas.Sum(l => l.Importe);
+        var subtotal = lineas.Sum(l => l.Bruto);
+        var descuentoLineas = lineas.Sum(l => l.Descuento);
+
+        var descuentoGlobal = Math.Round(request.DescuentoTotal, 2, MidpointRounding.AwayFromZero);
+        if (descuentoGlobal < 0 || descuentoGlobal > subtotal - descuentoLineas)
+        {
+            return Fail(VentaResultCode.DescuentoInvalido, "El descuento al total no puede ser negativo ni mayor al total de la venta.");
+        }
+
+        var descuentoTotal = descuentoLineas + descuentoGlobal;
+        var total = subtotal - descuentoTotal;
+        if (total <= 0)
+        {
+            return Fail(VentaResultCode.DescuentoInvalido, "El total de la venta no puede quedar en cero.");
+        }
+
+        var errorDescuento = ValidarAutorizacionDescuento(descuentoTotal, subtotal, permisos);
+        if (errorDescuento is not null) return errorDescuento;
 
         // 2) Stock: nunca se vende mas de lo que hay (RN-006). Se suma por corte
         //    por si el mismo corte viene en varias lineas.
@@ -164,21 +195,23 @@ public class VentaService : IVentaService
         {
             SucursalId = sucursal.Id,
             UsuarioId = usuarioId,
-            Subtotal = total,
-            Descuento = 0m,
+            Subtotal = subtotal,
+            Descuento = descuentoTotal,
             Total = total,
             Estado = EstadoVenta.Completada,
             Fecha = ahora
         };
 
-        foreach (var (corte, cantidad, importe) in lineas)
+        foreach (var (corte, cantidad, bruto, descuento) in lineas)
         {
             venta.Detalles.Add(new VentaDetalle
             {
                 CorteId = corte.Id,
                 Cantidad = cantidad,
                 PrecioUnitario = corte.PrecioBase,
-                Importe = importe
+                // Importe de la linea ya con su descuento; el de linea se deduce como
+                // (cantidad x precio) - importe, sin columna extra en el esquema.
+                Importe = bruto - descuento
             });
         }
 
@@ -195,7 +228,7 @@ public class VentaService : IVentaService
             inventario.FechaActualizacion = ahora;
         }
 
-        foreach (var (corte, cantidad, _) in lineas)
+        foreach (var (corte, cantidad, _, _) in lineas)
         {
             await _movimientoRepository.AddAsync(new MovimientoInventario
             {
@@ -318,6 +351,62 @@ public class VentaService : IVentaService
         return (null, resultado);
     }
 
+    /// <summary>
+    /// RF-POS-004: permisos diferenciados segun la magnitud del descuento. Un descuento
+    /// requiere 'pos.descuento'; si pasa del porcentaje configurado requiere
+    /// 'pos.descuento.alto'. Devuelve null si esta autorizado.
+    /// </summary>
+    private VentaResultDto<VentaDto>? ValidarAutorizacionDescuento(decimal descuento, decimal subtotal, IReadOnlyCollection<string>? permisos)
+    {
+        if (descuento <= 0) return null;
+
+        var tieneBasico = permisos?.Contains(PermisosPos.Descuento) == true;
+        var tieneAlto = permisos?.Contains(PermisosPos.DescuentoAlto) == true;
+
+        if (!tieneBasico && !tieneAlto)
+        {
+            return Fail(VentaResultCode.DescuentoNoAutorizado, "No tienes permiso para aplicar descuentos.");
+        }
+
+        var porcentaje = descuento / subtotal * 100m;
+        var maximo = _posSettings.DescuentoMaximoSinAutorizacionPorcentaje;
+        if (porcentaje > maximo && !tieneAlto)
+        {
+            return Fail(
+                VentaResultCode.DescuentoNoAutorizado,
+                $"Un descuento de {porcentaje:0.##}% excede el {maximo:0.##}% permitido. Requiere autorizacion de un Super Administrador.");
+        }
+
+        return null;
+    }
+
+    public async Task<VentaResultDto<TicketDto>> ObtenerTicketAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var venta = await _ventaRepository.GetByIdCompletoAsync(id, cancellationToken);
+        if (venta is null)
+        {
+            return VentaResultDto<TicketDto>.Fail(VentaResultCode.VentaNoEncontrada, "La venta no existe.");
+        }
+
+        var negocio = (await _negocioRepository.GetAllAsync(cancellationToken)).FirstOrDefault();
+        var zona = ResolverZonaHoraria(negocio?.ZonaHoraria);
+
+        return VentaResultDto<TicketDto>.Ok(new TicketDto(TicketBuilder.Construir(Mapear(venta), negocio, zona)));
+    }
+
+    private static TimeZoneInfo ResolverZonaHoraria(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return TimeZoneInfo.Utc;
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (Exception ex) when (ex is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
+
     private static bool EsCredito(MetodoPago metodo) =>
         metodo.Nombre.Equals(MetodoPago.NombreCredito, StringComparison.OrdinalIgnoreCase);
 
@@ -335,7 +424,14 @@ public class VentaService : IVentaService
         venta.Descuento,
         venta.Total,
         venta.Detalles
-            .Select(d => new VentaLineaDto(d.CorteId, d.Corte.Nombre, d.Corte.UnidadVenta.ToString(), d.Cantidad, d.PrecioUnitario, d.Importe))
+            .Select(d => new VentaLineaDto(
+                d.CorteId,
+                d.Corte.Nombre,
+                d.Corte.UnidadVenta.ToString(),
+                d.Cantidad,
+                d.PrecioUnitario,
+                d.Importe,
+                Math.Max(0m, Math.Round(d.Cantidad * d.PrecioUnitario, 2, MidpointRounding.AwayFromZero) - d.Importe)))
             .ToList(),
         venta.Pagos
             .Select(p => new VentaPagoDto(p.MetodoPagoId, p.MetodoPago.Nombre, p.Importe))
