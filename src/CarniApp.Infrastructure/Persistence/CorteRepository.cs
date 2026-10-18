@@ -22,6 +22,12 @@ public class CorteRepository : Repository<Corte>, ICorteRepository
             .Include(c => c.TipoAnimal)
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
 
+    public async Task<IReadOnlyList<Corte>> ObtenerActivosPorTipoAnimalAsync(Guid tipoAnimalId, CancellationToken cancellationToken = default) =>
+        await _dbSet
+            .Where(c => c.Activo && c.TipoAnimalId == tipoAnimalId)
+            .OrderBy(c => c.Nombre)
+            .ToListAsync(cancellationToken);
+
     public async Task<bool> ExisteCodigoBarrasAsync(string codigo, Guid? excluirId = null, CancellationToken cancellationToken = default) =>
         await _dbSet.AnyAsync(c =>
             c.Activo &&

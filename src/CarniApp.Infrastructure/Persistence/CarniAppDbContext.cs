@@ -41,6 +41,7 @@ public class CarniAppDbContext : DbContext
     public DbSet<VentaPago> VentasPago => Set<VentaPago>();
     public DbSet<Cliente> Clientes => Set<Cliente>();
     public DbSet<AbonoCredito> AbonosCredito => Set<AbonoCredito>();
+    public DbSet<LoteAnimal> LotesAnimal => Set<LoteAnimal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -53,6 +54,7 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<RefreshToken>().ToTable("RefreshToken");
         modelBuilder.Entity<TipoAnimal>().ToTable("TipoAnimal");
         modelBuilder.Entity<Corte>().ToTable("Corte");
+        modelBuilder.Entity<LoteAnimal>().ToTable("LoteAnimal");
         modelBuilder.Entity<Inventario>().ToTable("Inventario");
         modelBuilder.Entity<MovimientoInventario>().ToTable("MovimientoInventario");
         modelBuilder.Entity<MetodoPago>().ToTable("MetodoPago");
@@ -103,10 +105,19 @@ public class CarniAppDbContext : DbContext
             entity.Property(c => c.PrecioBase).HasColumnType("decimal(10,2)");
             entity.Property(c => c.StockMinimo).HasColumnType("decimal(10,3)");
             entity.Property(c => c.CodigoBarras).HasMaxLength(50);
+            entity.Property(c => c.RendimientoPorcentaje).HasColumnType("decimal(5,2)");
 
             entity.HasOne(c => c.TipoAnimal)
                 .WithMany(t => t.Cortes)
                 .HasForeignKey(c => c.TipoAnimalId);
+        });
+
+        modelBuilder.Entity<LoteAnimal>(entity =>
+        {
+            entity.HasKey(l => l.Id);
+            entity.Property(l => l.PesoKg).HasColumnType("decimal(10,3)");
+            entity.Property(l => l.PrecioCompra).HasColumnType("decimal(10,2)");
+            entity.HasOne(l => l.TipoAnimal).WithMany().HasForeignKey(l => l.TipoAnimalId);
         });
 
         modelBuilder.Entity<Inventario>(entity =>

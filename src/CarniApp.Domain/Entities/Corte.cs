@@ -26,4 +26,10 @@ public class Corte : BaseEntity
     /// si existe, es unico entre los cortes activos.
     /// </summary>
     public string? CodigoBarras { get; set; }
+
+    /// <summary>
+    /// Venta Facil: % del peso del animal que rinde este corte (0-100). Null = no
+    /// participa en el reparto. Solo aplica a cortes por peso.
+    /// </summary>
+    public decimal? RendimientoPorcentaje { get; set; }
 }

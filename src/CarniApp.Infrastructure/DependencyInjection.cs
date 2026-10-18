@@ -4,6 +4,7 @@ using CarniApp.Application.Features.Negocio;
 using CarniApp.Application.Features.Catalogos;
 using CarniApp.Application.Features.Clientes;
 using CarniApp.Application.Features.Inventario;
+using CarniApp.Application.Features.VentaFacil;
 using CarniApp.Application.Features.Ventas;
 using CarniApp.Infrastructure.Security;
 using CarniApp.Infrastructure.Services;
@@ -41,6 +42,7 @@ public static class DependencyInjection
         services.AddScoped<IVentaRepository, Persistence.VentaRepository>();
         services.AddScoped<IClienteRepository, Persistence.ClienteRepository>();
         services.AddScoped<IAbonoCreditoRepository, Persistence.AbonoCreditoRepository>();
+        services.AddScoped<ILoteAnimalRepository, Persistence.LoteAnimalRepository>();
 
         services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
         services.AddSingleton<IPosSettings, PosSettings>();
@@ -53,6 +55,7 @@ public static class DependencyInjection
         services.AddScoped<IInventarioService, InventarioService>();
         services.AddScoped<IVentaService, VentaService>();
         services.AddScoped<IClienteService, ClienteService>();
+        services.AddScoped<IVentaFacilService, VentaFacilService>();
 
         return services;
     }
