@@ -2,6 +2,9 @@ using CarniApp.Application.Common.Exceptions;
 using CarniApp.Application.Common.Interfaces;
 using CarniApp.Domain.Entities;
 
+// 'Inventario' tambien es un namespace hermano (Features.Inventario): alias para la entidad.
+using InventarioEntidad = CarniApp.Domain.Entities.Inventario;
+
 namespace CarniApp.Application.Features.Ventas;
 
 /// <summary>
@@ -135,7 +138,7 @@ public class VentaService : IVentaService
 
         // 2) Stock: nunca se vende mas de lo que hay (RN-006). Se suma por corte
         //    por si el mismo corte viene en varias lineas.
-        var inventarios = new Dictionary<Guid, Inventario>();
+        var inventarios = new Dictionary<Guid, InventarioEntidad>();
         foreach (var grupo in lineas.GroupBy(l => l.Corte.Id))
         {
             var pedido = grupo.Sum(l => l.Cantidad);
