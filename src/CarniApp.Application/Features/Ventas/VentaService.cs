@@ -227,9 +227,16 @@ public class VentaService : IVentaService
 
             if (pedido != porcentajeRecargo)
             {
-                if (permisos?.Contains(PermisosPos.AjustarRecargo) != true)
+                // Subir requiere 'ajustar'; bajar basta con 'reducir' (o 'ajustar').
+                var puedeAjustar = permisos?.Contains(PermisosPos.AjustarRecargo) == true;
+                var puedeReducir = puedeAjustar || permisos?.Contains(PermisosPos.ReducirRecargo) == true;
+                if (pedido > porcentajeRecargo ? !puedeAjustar : !puedeReducir)
                 {
-                    return Fail(VentaResultCode.RecargoNoAutorizado, "No tienes permiso para cambiar el porcentaje de cargo por credito.");
+                    return Fail(
+                        VentaResultCode.RecargoNoAutorizado,
+                        pedido > porcentajeRecargo
+                            ? $"No tienes permiso para subir el cargo por credito por encima del {porcentajeRecargo:0.##}%."
+                            : "No tienes permiso para cambiar el porcentaje de cargo por credito.");
                 }
 
                 porcentajeRecargo = pedido;

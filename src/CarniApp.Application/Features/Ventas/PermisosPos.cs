@@ -7,5 +7,6 @@ public static class PermisosPos
     public const string Anular = "pos.anular";
     public const string Descuento = "pos.descuento";
     public const string DescuentoAlto = "pos.descuento.alto";
-    public const string AjustarRecargo = "pos.recargo.ajustar";
+    public const string AjustarRecargo = "pos.recargo.ajustar";   // subir o bajar hasta el tope
+    public const string ReducirRecargo = "pos.recargo.reducir";   // solo bajar (hasta 0%)
 }

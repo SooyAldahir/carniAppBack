@@ -582,6 +582,34 @@ public class VentaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Recargo_ConPermisoDeReducir_PuedeBajarHastaCero_PeroNoSubir()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var aCero = await VenderCreditoConPorcentaje(cliente, corte.Id, 0m, PermisosPos.ReducirRecargo);
+        Assert.True(aCero.Exitoso, aCero.Mensaje);
+        Assert.Equal(0m, aCero.Datos!.RecargoCredito);
+
+        var aTres = await VenderCreditoConPorcentaje(cliente, corte.Id, 3m, PermisosPos.ReducirRecargo);
+        Assert.True(aTres.Exitoso, aTres.Mensaje);
+        Assert.Equal(9m, aTres.Datos!.RecargoCredito);
+
+        var subir = await VenderCreditoConPorcentaje(cliente, corte.Id, 8m, PermisosPos.ReducirRecargo);
+        Assert.Equal(VentaResultCode.RecargoNoAutorizado, subir.Code);
+    }
+
+    [Fact]
+    public async Task Recargo_ConPermisoDeAjustar_PuedeSubirYBajar()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 2000m);
+
+        Assert.Equal(24m, (await VenderCreditoConPorcentaje(cliente, corte.Id, 8m, PermisosPos.AjustarRecargo)).Datos!.RecargoCredito);
+        Assert.Equal(0m, (await VenderCreditoConPorcentaje(cliente, corte.Id, 0m, PermisosPos.AjustarRecargo)).Datos!.RecargoCredito);
+    }
+
+    [Fact]
     public async Task Recargo_FueraDeRango_SeRechaza_AunConPermiso()
     {
         var corte = await CorteConStock(10m, precio: 100m);
