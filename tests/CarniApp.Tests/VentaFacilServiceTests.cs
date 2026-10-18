@@ -9,6 +9,9 @@ public class VentaFacilServiceTests : IDisposable
 {
     private readonly TestDb _db = new();
     private readonly FakeClock _clock = new();
+    private Usuario? _usuario;
+
+    private Usuario UsuarioDePrueba() => _usuario ??= _db.SembrarUsuarioParaMovimientos();
 
     public void Dispose() => _db.Dispose();
 
@@ -278,7 +281,7 @@ public class VentaFacilServiceTests : IDisposable
 
     private Task<VentaFacilResultDto<RepartoDto>> Pesar(Guid tipoId, decimal peso, params (Guid Corte, decimal Kg)[] kgs)
     {
-        var usuario = _db.SembrarUsuarioParaMovimientos();
+        var usuario = UsuarioDePrueba();
         return Run(s => s.RegistrarLoteAsync(
             new LoteRequest(tipoId, peso, peso * 50m, null, kgs.Select(k => new KgCorteDto(k.Corte, k.Kg)).ToList()),
             usuario.Id));
@@ -392,7 +395,7 @@ public class VentaFacilServiceTests : IDisposable
     public async Task LotesEstimados_NoAlimentanElAprendizaje()
     {
         var (tipo, bistec, molida) = Sembrar();
-        var usuario = _db.SembrarUsuarioParaMovimientos();
+        var usuario = UsuarioDePrueba();
         for (var i = 0; i < 3; i++)
         {
             await Run(s => s.RegistrarLoteAsync(new LoteRequest(tipo.Id, 100m, 5000m), usuario.Id));   // estimados
