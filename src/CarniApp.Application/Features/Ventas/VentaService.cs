@@ -215,31 +215,31 @@ public class VentaService : IVentaService
         // se imprime siempre en el ticket como renglon aparte.
         var creditoBase = pagosValidados.Pagos.Where(p => EsCredito(p.Metodo)).Sum(p => p.Importe);
         var porcentajeRecargo = _posSettings.RecargoCreditoPorcentaje;
-        if (creditoBase > 0 && request.RecargoCreditoPorcentaje is { } pedido)
+        if (creditoBase > 0 && request.RecargoCreditoPorcentaje is { } porcentajePedido)
         {
             // Cambiar el % al cobrar: dentro del tope y solo con permiso. El ticket siempre
             // muestra el % aplicado, asi que el cliente lo ve.
-            pedido = Math.Round(pedido, 2, MidpointRounding.AwayFromZero);
-            if (pedido < 0 || pedido > _posSettings.RecargoCreditoMaximoPorcentaje)
+            porcentajePedido = Math.Round(porcentajePedido, 2, MidpointRounding.AwayFromZero);
+            if (porcentajePedido < 0 || porcentajePedido > _posSettings.RecargoCreditoMaximoPorcentaje)
             {
                 return Fail(VentaResultCode.RecargoInvalido, $"El cargo por credito debe estar entre 0% y {_posSettings.RecargoCreditoMaximoPorcentaje:0.##}%.");
             }
 
-            if (pedido != porcentajeRecargo)
+            if (porcentajePedido != porcentajeRecargo)
             {
                 // Subir requiere 'ajustar'; bajar basta con 'reducir' (o 'ajustar').
                 var puedeAjustar = permisos?.Contains(PermisosPos.AjustarRecargo) == true;
                 var puedeReducir = puedeAjustar || permisos?.Contains(PermisosPos.ReducirRecargo) == true;
-                if (pedido > porcentajeRecargo ? !puedeAjustar : !puedeReducir)
+                if (porcentajePedido > porcentajeRecargo ? !puedeAjustar : !puedeReducir)
                 {
                     return Fail(
                         VentaResultCode.RecargoNoAutorizado,
-                        pedido > porcentajeRecargo
+                        porcentajePedido > porcentajeRecargo
                             ? $"No tienes permiso para subir el cargo por credito por encima del {porcentajeRecargo:0.##}%."
                             : "No tienes permiso para cambiar el porcentaje de cargo por credito.");
                 }
 
-                porcentajeRecargo = pedido;
+                porcentajeRecargo = porcentajePedido;
             }
         }
 
