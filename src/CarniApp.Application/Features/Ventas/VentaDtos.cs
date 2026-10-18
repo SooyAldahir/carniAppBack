@@ -30,6 +30,9 @@ public record CrearVentaRequest(
 
 public record TicketDto(string Texto);
 
+/// <summary>Reglas del POS que la app necesita mostrar al cobrar.</summary>
+public record PosConfigDto(decimal RecargoCreditoPorcentaje, decimal DescuentoMaximoSinAutorizacionPorcentaje);
+
 public record AnularVentaRequest(string Motivo);
 
 public record VentaLineaDto(
@@ -58,7 +61,8 @@ public record VentaDto(
     Guid? ClienteId = null,
     string? ClienteNombre = null,
     string? ClienteDireccion = null,
-    string? Nota = null);
+    string? Nota = null,
+    decimal RecargoCredito = 0m);
 
 public record VentaResumenDto(
     Guid Id,

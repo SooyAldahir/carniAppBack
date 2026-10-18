@@ -270,7 +270,7 @@ public class VentaServiceTests : IDisposable
         Assert.True(r.Exitoso, r.Mensaje);
         Assert.Equal(cliente, r.Datos!.ClienteId);
         Assert.Equal("Don Pepe", r.Datos.ClienteNombre);
-        Assert.Equal(300m, await SaldoDe(cliente));
+        Assert.Equal(315m, await SaldoDe(cliente));   // 300 fiados + 5% de cargo
         Assert.Equal(7m, await StockDe(corte.Id));
     }
 
@@ -285,7 +285,7 @@ public class VentaServiceTests : IDisposable
             new[] { new VentaPagoRequest(_efectivoId, 100m), new VentaPagoRequest(_creditoId, 200m) });
 
         Assert.True(r.Exitoso, r.Mensaje);
-        Assert.Equal(200m, await SaldoDe(cliente));
+        Assert.Equal(210m, await SaldoDe(cliente));   // solo lo fiado (200) lleva cargo
     }
 
     [Fact]
@@ -337,7 +337,7 @@ public class VentaServiceTests : IDisposable
         var venta = (await VenderACliente(cliente,
             new[] { new VentaLineaRequest(corte.Id, 2m) },
             new[] { new VentaPagoRequest(_creditoId, 200m) })).Datos!;
-        Assert.Equal(300m, await SaldoDe(cliente));
+        Assert.Equal(310m, await SaldoDe(cliente));   // 100 previos + 200 + 10 de cargo
 
         var r = await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()));
 
@@ -425,6 +425,139 @@ public class VentaServiceTests : IDisposable
         var larga = await Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, null, new string('x', 201)), Usuario()));
         Assert.Equal(VentaResultCode.NotaInvalida, larga.Code);
         Assert.Equal(9m, await StockDe(corte.Id));   // solo se vendio la primera
+    }
+
+    // ---------------- Cargo por credito (visible) ----------------
+
+    [Fact]
+    public async Task Credito_AgregaCargoVisible_AlTotal_YAlPagoACredito()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_creditoId, 300m) });
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(300m, r.Datos!.Subtotal);       // lo pedido no cambia
+        Assert.Equal(3m, r.Datos.Lineas[0].Cantidad); // ni el peso
+        Assert.Equal(15m, r.Datos.RecargoCredito);
+        Assert.Equal(315m, r.Datos.Total);
+        Assert.Equal(315m, r.Datos.Pagos.Sum(p => p.Importe));   // pagos = total
+        Assert.Equal(315m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Credito_Parcial_SoloSeCargaSobreLoFiado()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m), new VentaPagoRequest(_creditoId, 200m) });
+
+        Assert.Equal(10m, r.Datos!.RecargoCredito);
+        Assert.Equal(310m, r.Datos.Total);
+        Assert.Equal(100m, r.Datos.Pagos.Single(p => p.MetodoPago == "Efectivo").Importe);
+        Assert.Equal(210m, r.Datos.Pagos.Single(p => p.MetodoPago == "Credito").Importe);
+    }
+
+    [Fact]
+    public async Task Credito_ElCargoSeRedondeaAlCentavo()
+    {
+        var corte = await CorteConStock(10m, precio: 33.33m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_creditoId, 33.33m) });
+
+        Assert.Equal(1.67m, r.Datos!.RecargoCredito);   // 1.6665 -> 1.67
+        Assert.Equal(35.00m, r.Datos.Total);
+    }
+
+    [Fact]
+    public async Task Credito_ElLimiteIncluyeElCargo()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 300m);
+
+        // 290 + 5% = 304.50 > 300
+        var rechazada = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 2.9m) },
+            new[] { new VentaPagoRequest(_creditoId, 290m) });
+        Assert.Equal(VentaResultCode.CreditoExcedido, rechazada.Code);
+
+        // 285 + 5% = 299.25 <= 300
+        var aceptada = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 2.85m) },
+            new[] { new VentaPagoRequest(_creditoId, 285m) });
+        Assert.True(aceptada.Exitoso, aceptada.Mensaje);
+        Assert.Equal(299.25m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task SinCredito_NoHayCargo()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m) });
+
+        Assert.Equal(0m, r.Datos!.RecargoCredito);
+        Assert.Equal(100m, r.Datos.Total);
+    }
+
+    [Fact]
+    public async Task Credito_ConPorcentajeEnCero_NoCobraCargo()
+    {
+        _posSettings.Recargo = 0m;
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_creditoId, 100m) });
+
+        Assert.Equal(0m, r.Datos!.RecargoCredito);
+        Assert.Equal(100m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Ticket_MuestraElCargoPorCredito_ConSuPorcentaje_YLaCantidadPedida()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+        var venta = (await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_creditoId, 300m) })).Datos!;
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
+
+        Assert.Contains("3 kg x $100.00", ticket);          // lo que pidio, sin tocar
+        Assert.Contains("Cargo por credito (5%)", ticket);
+        Assert.Contains("+$15.00", ticket);
+        Assert.Contains("TOTAL", ticket);
+        Assert.Contains("$315.00", ticket);
+        Assert.All(ticket.Split('\n'), l => Assert.True(l.TrimEnd('\r').Length <= 32, l));
+    }
+
+    [Fact]
+    public async Task Anular_VentaACredito_QuitaTambienElCargo()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 1000m);
+        var venta = (await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 2m) },
+            new[] { new VentaPagoRequest(_creditoId, 200m) })).Datos!;
+        Assert.Equal(210m, await SaldoDe(cliente));
+
+        Assert.True((await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()))).Exitoso);
+        Assert.Equal(0m, await SaldoDe(cliente));
     }
 
     [Fact]

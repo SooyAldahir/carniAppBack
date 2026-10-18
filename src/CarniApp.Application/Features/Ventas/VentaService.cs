@@ -211,12 +211,18 @@ public class VentaService : IVentaService
         if (pagosValidados.Error is not null) return pagosValidados.Error;
 
         // RF-CRED-001: lo que se carga a credito no puede pasar del credito disponible.
-        var credito = pagosValidados.Pagos.Where(p => EsCredito(p.Metodo)).Sum(p => p.Importe);
+        // Lo fiado lleva un cargo (% configurable) que se suma a la deuda y al total, y
+        // se imprime siempre en el ticket como renglon aparte.
+        var creditoBase = pagosValidados.Pagos.Where(p => EsCredito(p.Metodo)).Sum(p => p.Importe);
+        var recargo = creditoBase > 0
+            ? Math.Round(creditoBase * _posSettings.RecargoCreditoPorcentaje / 100m, 2, MidpointRounding.AwayFromZero)
+            : 0m;
+        var credito = creditoBase + recargo;
         if (credito > 0 && credito > cliente!.CreditoDisponible)
         {
             return Fail(
                 VentaResultCode.CreditoExcedido,
-                $"El credito solicitado ({credito:0.00}) excede el disponible de {cliente.Nombre}: {cliente.CreditoDisponible:0.00} (limite {cliente.LimiteCredito:0.00}, debe {cliente.SaldoCredito:0.00}).");
+                $"El credito solicitado ({credito:0.00}, incluye cargo de {recargo:0.00}) excede el disponible de {cliente.Nombre}: {cliente.CreditoDisponible:0.00} (limite {cliente.LimiteCredito:0.00}, debe {cliente.SaldoCredito:0.00}).");
         }
 
         // 4) Todo valido: ahora si se modifica el estado.
@@ -229,7 +235,8 @@ public class VentaService : IVentaService
             Nota = nota,
             Subtotal = subtotal,
             Descuento = descuentoTotal,
-            Total = total,
+            RecargoCredito = recargo,
+            Total = total + recargo,
             Estado = EstadoVenta.Completada,
             Fecha = ahora
         };
@@ -247,9 +254,17 @@ public class VentaService : IVentaService
             });
         }
 
+        var recargoPendiente = recargo;   // el cargo se registra dentro del pago a credito
         foreach (var (metodo, importe) in pagosValidados.Pagos)
         {
-            venta.Pagos.Add(new VentaPago { MetodoPagoId = metodo.Id, Importe = importe });
+            var importePago = importe;
+            if (EsCredito(metodo) && recargoPendiente > 0)
+            {
+                importePago += recargoPendiente;
+                recargoPendiente = 0m;
+            }
+
+            venta.Pagos.Add(new VentaPago { MetodoPagoId = metodo.Id, Importe = importePago });
         }
 
         await _ventaRepository.AddAsync(venta, cancellationToken);
@@ -487,7 +502,8 @@ public class VentaService : IVentaService
         venta.ClienteId,
         venta.Cliente?.Nombre,
         venta.Cliente?.Direccion,
-        venta.Nota);
+        venta.Nota,
+        venta.RecargoCredito);
 
     private async Task<Sucursal?> ObtenerSucursalPrincipalAsync(CancellationToken cancellationToken)
     {

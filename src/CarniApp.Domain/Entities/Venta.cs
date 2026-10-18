@@ -31,6 +31,9 @@ public class Venta
     public decimal Descuento { get; set; }
     public decimal Total { get; set; }
 
+    /// <summary>Cargo por vender a credito (ya incluido en Total). Siempre visible en el ticket.</summary>
+    public decimal RecargoCredito { get; set; }
+
     public string Estado { get; set; } = EstadoVenta.Completada;
     public string? MotivoAnulacion { get; set; }
 

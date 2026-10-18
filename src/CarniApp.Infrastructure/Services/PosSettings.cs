@@ -15,6 +15,9 @@ public class PosSettings : IPosSettings
         _configuration = configuration;
     }
 
+    public decimal RecargoCreditoPorcentaje =>
+        _configuration.GetValue<decimal?>("Pos:RecargoCreditoPorcentaje") ?? 5m;
+
     public decimal DescuentoMaximoSinAutorizacionPorcentaje =>
         _configuration.GetValue<decimal?>("Pos:DescuentoMaximoSinAutorizacionPorcentaje") ?? PorcentajeDefault;
 }

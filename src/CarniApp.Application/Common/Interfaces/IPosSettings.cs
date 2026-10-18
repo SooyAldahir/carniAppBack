@@ -8,4 +8,10 @@ public interface IPosSettings
     /// 'pos.descuento'. Por encima se necesita 'pos.descuento.alto' (RF-POS-004).
     /// </summary>
     decimal DescuentoMaximoSinAutorizacionPorcentaje { get; }
+
+    /// <summary>
+    /// Cargo (% sobre lo que se fia) por vender a credito. Se muestra siempre en el
+    /// ticket como "Cargo por credito". 0 = sin cargo.
+    /// </summary>
+    decimal RecargoCreditoPorcentaje { get; }
 }

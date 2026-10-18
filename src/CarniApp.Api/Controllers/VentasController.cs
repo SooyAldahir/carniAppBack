@@ -15,11 +15,19 @@ namespace CarniApp.Api.Controllers;
 public class VentasController : ControllerBase
 {
     private readonly IVentaService _ventaService;
+    private readonly IPosSettings _posSettings;
 
-    public VentasController(IVentaService ventaService)
+    public VentasController(IVentaService ventaService, IPosSettings posSettings)
     {
         _ventaService = ventaService;
+        _posSettings = posSettings;
     }
+
+    /// <summary>Reglas que la app muestra al cobrar (cargo por credito, tope de descuento).</summary>
+    [PermisoAuthorize("pos.vender")]
+    [HttpGet("configuracion")]
+    public ActionResult<PosConfigDto> Configuracion() =>
+        Ok(new PosConfigDto(_posSettings.RecargoCreditoPorcentaje, _posSettings.DescuentoMaximoSinAutorizacionPorcentaje));
 
     /// <summary>Cortes vendibles con precio y stock actual.</summary>
     [PermisoAuthorize("pos.vender")]

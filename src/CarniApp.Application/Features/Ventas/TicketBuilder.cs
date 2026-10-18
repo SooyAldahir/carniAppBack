@@ -47,6 +47,7 @@ public static class TicketBuilder
         sb.AppendLine(Linea());
         sb.AppendLine(Fila("Subtotal", Dinero(venta.Subtotal)));
         if (venta.Descuento > 0) sb.AppendLine(Fila("Descuento", "-" + Dinero(venta.Descuento)));
+        if (venta.RecargoCredito > 0) sb.AppendLine(Fila(EtiquetaRecargo(venta), "+" + Dinero(venta.RecargoCredito)));
         sb.AppendLine(Fila("TOTAL", Dinero(venta.Total)));
         sb.AppendLine(Linea());
 
@@ -67,6 +68,17 @@ public static class TicketBuilder
         sb.AppendLine(Linea());
         sb.AppendLine(Centrar("Gracias por su compra"));
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>"Cargo por credito (5%)": el porcentaje se deduce de lo fiado antes del cargo.</summary>
+    private static string EtiquetaRecargo(VentaDto venta)
+    {
+        var fiado = venta.Pagos
+            .Where(p => p.MetodoPago.Equals(MetodoPago.NombreCredito, StringComparison.OrdinalIgnoreCase))
+            .Sum(p => p.Importe) - venta.RecargoCredito;
+        if (fiado <= 0) return "Cargo por credito";
+        var porcentaje = Math.Round(venta.RecargoCredito / fiado * 100m, 2, MidpointRounding.AwayFromZero);
+        return $"Cargo por credito ({porcentaje.ToString("0.##", Cultura)}%)";
     }
 
     /// <summary>Parte el texto en lineas de maximo 'ancho' columnas, cortando por palabras.</summary>

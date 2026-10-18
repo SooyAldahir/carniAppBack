@@ -18,6 +18,8 @@ public class FakePosSettings : IPosSettings
 {
     public decimal Maximo { get; set; } = 10m;
     public decimal DescuentoMaximoSinAutorizacionPorcentaje => Maximo;
+    public decimal Recargo { get; set; } = 5m;
+    public decimal RecargoCreditoPorcentaje => Recargo;
 }
 
 /// <summary>
