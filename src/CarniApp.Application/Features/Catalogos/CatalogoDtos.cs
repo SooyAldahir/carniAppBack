@@ -11,14 +11,16 @@ public record CorteDto(
     string Nombre,
     string UnidadVenta,
     decimal PrecioBase,
-    decimal StockMinimo);
+    decimal StockMinimo,
+    string? CodigoBarras = null);
 
 public record GuardarCorteRequest(
     Guid TipoAnimalId,
     string Nombre,
     string UnidadVenta,
     decimal PrecioBase,
-    decimal StockMinimo);
+    decimal StockMinimo,
+    string? CodigoBarras = null);
 
 public enum CatalogoResultCode
 {
@@ -26,6 +28,7 @@ public enum CatalogoResultCode
     NoEncontrado,
     TipoAnimalNoEncontrado,
     NombreDuplicado,
+    CodigoBarrasDuplicado,
     UnidadVentaInvalida,
     PrecioInvalido,
     TipoAnimalConCortesActivos

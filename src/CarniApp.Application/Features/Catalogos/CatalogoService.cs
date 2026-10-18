@@ -122,7 +122,8 @@ public class CatalogoService : ICatalogoService
             Nombre = request.Nombre.Trim(),
             UnidadVenta = Enum.Parse<UnidadVenta>(request.UnidadVenta, ignoreCase: true),
             PrecioBase = request.PrecioBase,
-            StockMinimo = request.StockMinimo
+            StockMinimo = request.StockMinimo,
+            CodigoBarras = NormalizarCodigo(request.CodigoBarras)
         };
 
         await _corteRepository.AddAsync(corte, cancellationToken);
@@ -149,6 +150,7 @@ public class CatalogoService : ICatalogoService
         corte.UnidadVenta = Enum.Parse<UnidadVenta>(request.UnidadVenta, ignoreCase: true);
         corte.PrecioBase = request.PrecioBase;
         corte.StockMinimo = request.StockMinimo;
+        corte.CodigoBarras = NormalizarCodigo(request.CodigoBarras);
 
         _corteRepository.Update(corte);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -197,8 +199,17 @@ public class CatalogoService : ICatalogoService
             return CatalogoResultDto<CorteDto>.Fail(CatalogoResultCode.NombreDuplicado, $"Ya existe un corte llamado '{nombre}'.");
         }
 
+        var codigo = NormalizarCodigo(request.CodigoBarras);
+        if (codigo is not null && await _corteRepository.ExisteCodigoBarrasAsync(codigo, excluirId, cancellationToken))
+        {
+            return CatalogoResultDto<CorteDto>.Fail(CatalogoResultCode.CodigoBarrasDuplicado, $"El codigo de barras '{codigo}' ya esta asignado a otro corte.");
+        }
+
         return null;
     }
+
+    private static string? NormalizarCodigo(string? codigo) =>
+        string.IsNullOrWhiteSpace(codigo) ? null : codigo.Trim();
 
     private static CorteDto Mapear(Corte corte) => new(
         corte.Id,
@@ -207,5 +218,6 @@ public class CatalogoService : ICatalogoService
         corte.Nombre,
         corte.UnidadVenta.ToString(),
         corte.PrecioBase,
-        corte.StockMinimo);
+        corte.StockMinimo,
+        corte.CodigoBarras);
 }

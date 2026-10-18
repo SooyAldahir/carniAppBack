@@ -72,7 +72,8 @@ public class VentaService : IVentaService
                 c.TipoAnimal.Nombre,
                 c.UnidadVenta.ToString(),
                 c.PrecioBase,
-                stockPorCorte.GetValueOrDefault(c.Id, 0m)))
+                stockPorCorte.GetValueOrDefault(c.Id, 0m),
+                c.CodigoBarras))
             .ToList();
     }
 

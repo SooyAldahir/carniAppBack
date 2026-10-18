@@ -8,5 +8,7 @@ public interface ICorteRepository : IRepository<Corte>
 
     Task<Corte?> GetByIdConTipoAnimalAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<bool> ExisteCodigoBarrasAsync(string codigo, Guid? excluirId = null, CancellationToken cancellationToken = default);
+
     Task<bool> ExisteNombreAsync(string nombre, Guid? excluirId = null, CancellationToken cancellationToken = default);
 }

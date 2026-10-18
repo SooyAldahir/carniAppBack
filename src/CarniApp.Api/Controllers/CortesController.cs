@@ -52,6 +52,7 @@ public class CortesController : ControllerBase
         CatalogoResultCode.NoEncontrado => NotFound(new { mensaje }),
         CatalogoResultCode.TipoAnimalNoEncontrado => NotFound(new { mensaje }),
         CatalogoResultCode.NombreDuplicado => Conflict(new { mensaje }),
+        CatalogoResultCode.CodigoBarrasDuplicado => Conflict(new { mensaje }),
         CatalogoResultCode.PrecioInvalido => BadRequest(new { mensaje }),
         CatalogoResultCode.UnidadVentaInvalida => BadRequest(new { mensaje }),
         _ => BadRequest(new { mensaje })

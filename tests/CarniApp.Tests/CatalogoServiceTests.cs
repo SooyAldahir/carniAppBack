@@ -18,8 +18,8 @@ public class CatalogoServiceTests : IDisposable
     private async Task<Guid> CrearTipo(string nombre = "Res") =>
         (await Con(s => s.CrearTipoAnimalAsync(new GuardarTipoAnimalRequest(nombre)))).Datos!.Id;
 
-    private static GuardarCorteRequest Corte(Guid tipoId, string nombre = "Bistec", string unidad = "Peso", decimal precio = 150m, decimal min = 5m) =>
-        new(tipoId, nombre, unidad, precio, min);
+    private static GuardarCorteRequest Corte(Guid tipoId, string nombre = "Bistec", string unidad = "Peso", decimal precio = 150m, decimal min = 5m, string? codigo = null) =>
+        new(tipoId, nombre, unidad, precio, min, codigo);
 
     [Fact]
     public async Task TipoAnimal_NombreDuplicado_SinImportarMayusculasNiEspacios()
@@ -119,5 +119,39 @@ public class CatalogoServiceTests : IDisposable
         Assert.Equal(CatalogoResultCode.NoEncontrado, (await Con(s => s.DesactivarTipoAnimalAsync(Guid.NewGuid()))).Code);
         Assert.Equal(CatalogoResultCode.NoEncontrado,
             (await Con(s => s.ActualizarTipoAnimalAsync(Guid.NewGuid(), new GuardarTipoAnimalRequest("X")))).Code);
+    }
+
+    [Fact]
+    public async Task Corte_CodigoDeBarras_SeGuardaSinEspaciosYSeDevuelve()
+    {
+        var tipo = await CrearTipo();
+        var r = await Con(s => s.CrearCorteAsync(Corte(tipo, codigo: "  7501234567890 ")));
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal("7501234567890", r.Datos!.CodigoBarras);
+    }
+
+    [Fact]
+    public async Task Corte_CodigoDeBarras_VacioSeGuardaComoNulo_YVariosCortesSinCodigoConviven()
+    {
+        var tipo = await CrearTipo();
+        var a = await Con(s => s.CrearCorteAsync(Corte(tipo, "A", codigo: "   ")));
+        var b = await Con(s => s.CrearCorteAsync(Corte(tipo, "B")));
+
+        Assert.True(a.Exitoso && b.Exitoso);
+        Assert.Null(a.Datos!.CodigoBarras);
+    }
+
+    [Fact]
+    public async Task Corte_CodigoDeBarras_Duplicado_SeRechaza_PeroPuedeConservarElPropio()
+    {
+        var tipo = await CrearTipo();
+        var a = await Con(s => s.CrearCorteAsync(Corte(tipo, "A", codigo: "111")));
+
+        var dup = await Con(s => s.CrearCorteAsync(Corte(tipo, "B", codigo: "111")));
+        Assert.Equal(CatalogoResultCode.CodigoBarrasDuplicado, dup.Code);
+
+        var mismo = await Con(s => s.ActualizarCorteAsync(a.Datos!.Id, Corte(tipo, "A", precio: 160m, codigo: "111")));
+        Assert.True(mismo.Exitoso, mismo.Mensaje);
     }
 }

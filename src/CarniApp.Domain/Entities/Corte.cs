@@ -20,4 +20,10 @@ public class Corte : BaseEntity
     public decimal PrecioBase { get; set; }
 
     public decimal StockMinimo { get; set; }
+
+    /// <summary>
+    /// Codigo de barras / SKU que lee el escaner en el POS (RF-POS-006). Opcional;
+    /// si existe, es unico entre los cortes activos.
+    /// </summary>
+    public string? CodigoBarras { get; set; }
 }

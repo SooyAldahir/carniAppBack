@@ -6,7 +6,8 @@ public record CortePosDto(
     string TipoAnimal,
     string UnidadVenta,
     decimal PrecioBase,
-    decimal StockActual);
+    decimal StockActual,
+    string? CodigoBarras = null);
 
 public record MetodoPagoDto(Guid Id, string Nombre, bool Disponible);
 

@@ -98,6 +98,7 @@ public class CarniAppDbContext : DbContext
 
             entity.Property(c => c.PrecioBase).HasColumnType("decimal(10,2)");
             entity.Property(c => c.StockMinimo).HasColumnType("decimal(10,3)");
+            entity.Property(c => c.CodigoBarras).HasMaxLength(50);
 
             entity.HasOne(c => c.TipoAnimal)
                 .WithMany(t => t.Cortes)

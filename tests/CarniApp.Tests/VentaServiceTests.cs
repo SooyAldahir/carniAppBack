@@ -358,6 +358,20 @@ public class VentaServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Catalogo_IncluyeElCodigoDeBarras_ParaQueElPosLoBusqueAlEscanear()
+    {
+        var corte = await CorteConStock(3m, nombre: "Costilla");
+        using (var ctx = _db.NuevoContexto())
+        {
+            ctx.Cortes.Single(c => c.Id == corte.Id).CodigoBarras = "7501234567890";
+            ctx.SaveChanges();
+        }
+
+        var catalogo = await Con(s => s.ObtenerCatalogoAsync());
+        Assert.Equal("7501234567890", catalogo.Single(c => c.CorteId == corte.Id).CodigoBarras);
+    }
+
+    [Fact]
     public async Task DosVentasSimultaneas_DelMismoStock_LaSegundaFallaPorConcurrencia()
     {
         var corte = await CorteConStock(5m, precio: 10m);
