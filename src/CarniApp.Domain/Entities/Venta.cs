@@ -20,8 +20,9 @@ public class Venta
     public Guid SucursalId { get; set; }
     public Sucursal Sucursal { get; set; } = null!;
 
-    /// <summary>Cliente asociado (Sprint 7). Por ahora siempre null.</summary>
+    /// <summary>Cliente asociado (obligatorio si se paga a credito).</summary>
     public Guid? ClienteId { get; set; }
+    public Cliente? Cliente { get; set; }
 
     public Guid UsuarioId { get; set; }
     public Usuario Usuario { get; set; } = null!;

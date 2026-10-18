@@ -27,6 +27,7 @@ public static class TicketBuilder
         var local = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(venta.Fecha, DateTimeKind.Utc), zona);
         sb.AppendLine(Fila($"Folio: {venta.Folio}", local.ToString("dd/MM/yyyy HH:mm", Cultura)));
         if (!string.IsNullOrWhiteSpace(venta.UsuarioNombre)) sb.AppendLine(Recortar($"Atendio: {venta.UsuarioNombre}", Ancho));
+        if (!string.IsNullOrWhiteSpace(venta.ClienteNombre)) sb.AppendLine(Recortar($"Cliente: {venta.ClienteNombre}", Ancho));
         sb.AppendLine(Linea());
 
         foreach (var l in venta.Lineas)

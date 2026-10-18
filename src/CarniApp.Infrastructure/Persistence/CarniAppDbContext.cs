@@ -39,6 +39,8 @@ public class CarniAppDbContext : DbContext
     public DbSet<Venta> Ventas => Set<Venta>();
     public DbSet<VentaDetalle> VentasDetalle => Set<VentaDetalle>();
     public DbSet<VentaPago> VentasPago => Set<VentaPago>();
+    public DbSet<Cliente> Clientes => Set<Cliente>();
+    public DbSet<AbonoCredito> AbonosCredito => Set<AbonoCredito>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -57,6 +59,8 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<Venta>().ToTable("Venta");
         modelBuilder.Entity<VentaDetalle>().ToTable("VentaDetalle");
         modelBuilder.Entity<VentaPago>().ToTable("VentaPago");
+        modelBuilder.Entity<Cliente>().ToTable("Cliente");
+        modelBuilder.Entity<AbonoCredito>().ToTable("AbonoCredito");
 
         modelBuilder.Entity<RolPermiso>(entity =>
         {
@@ -151,6 +155,7 @@ public class CarniAppDbContext : DbContext
 
             entity.HasOne(v => v.Sucursal).WithMany().HasForeignKey(v => v.SucursalId);
             entity.HasOne(v => v.Usuario).WithMany().HasForeignKey(v => v.UsuarioId);
+            entity.HasOne(v => v.Cliente).WithMany().HasForeignKey(v => v.ClienteId);
             entity.HasMany(v => v.Detalles).WithOne(d => d.Venta).HasForeignKey(d => d.VentaId).OnDelete(DeleteBehavior.Cascade);
             entity.HasMany(v => v.Pagos).WithOne(p => p.Venta).HasForeignKey(p => p.VentaId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -169,6 +174,30 @@ public class CarniAppDbContext : DbContext
             entity.HasKey(p => p.Id);
             entity.Property(p => p.Importe).HasColumnType("decimal(10,2)");
             entity.HasOne(p => p.MetodoPago).WithMany().HasForeignKey(p => p.MetodoPagoId);
+        });
+
+        modelBuilder.Entity<Cliente>(entity =>
+        {
+            entity.Property(c => c.Nombre).HasMaxLength(150);
+            entity.Property(c => c.Telefono).HasMaxLength(30);
+            entity.Property(c => c.Direccion).HasMaxLength(300);
+            entity.Property(c => c.Referencias).HasMaxLength(500);
+            entity.Property(c => c.FotoFachadaUrl).HasMaxLength(500);
+            entity.Property(c => c.Latitud).HasColumnType("decimal(10,7)");
+            entity.Property(c => c.Longitud).HasColumnType("decimal(10,7)");
+            entity.Property(c => c.LimiteCredito).HasColumnType("decimal(10,2)");
+            // Token de concurrencia: dos ventas a credito (o un abono) simultaneos no
+            // pueden pisarse el saldo ni exceder el limite.
+            entity.Property(c => c.SaldoCredito).HasColumnType("decimal(10,2)").IsConcurrencyToken();
+            entity.Ignore(c => c.CreditoDisponible);
+        });
+
+        modelBuilder.Entity<AbonoCredito>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.Importe).HasColumnType("decimal(10,2)");
+            entity.HasOne(a => a.Cliente).WithMany().HasForeignKey(a => a.ClienteId);
+            entity.HasOne(a => a.Usuario).WithMany().HasForeignKey(a => a.UsuarioId);
         });
 
         modelBuilder.Entity<MetodoPago>(entity =>

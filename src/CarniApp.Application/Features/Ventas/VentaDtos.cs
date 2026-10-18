@@ -24,7 +24,8 @@ public record VentaPagoRequest(Guid MetodoPagoId, decimal Importe);
 public record CrearVentaRequest(
     IReadOnlyList<VentaLineaRequest> Lineas,
     IReadOnlyList<VentaPagoRequest> Pagos,
-    decimal DescuentoTotal = 0m);
+    decimal DescuentoTotal = 0m,
+    Guid? ClienteId = null);
 
 public record TicketDto(string Texto);
 
@@ -52,7 +53,9 @@ public record VentaDto(
     decimal Descuento,
     decimal Total,
     IReadOnlyList<VentaLineaDto> Lineas,
-    IReadOnlyList<VentaPagoDto> Pagos);
+    IReadOnlyList<VentaPagoDto> Pagos,
+    Guid? ClienteId = null,
+    string? ClienteNombre = null);
 
 public record VentaResumenDto(
     Guid Id,
@@ -76,6 +79,8 @@ public enum VentaResultCode
     PagoInvalido,
     MetodoPagoNoEncontrado,
     MetodoPagoNoDisponible,
+    ClienteNoEncontrado,
+    CreditoExcedido,
     PagosNoCuadran,
     VentaNoEncontrada,
     VentaYaAnulada,

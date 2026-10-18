@@ -19,6 +19,7 @@ public class VentaRepository : IVentaRepository
     public async Task<Venta?> GetByIdCompletoAsync(Guid id, CancellationToken cancellationToken = default) =>
         await _context.Ventas
             .Include(v => v.Usuario)
+            .Include(v => v.Cliente)
             .Include(v => v.Detalles).ThenInclude(d => d.Corte)
             .Include(v => v.Pagos).ThenInclude(p => p.MetodoPago)
             .FirstOrDefaultAsync(v => v.Id == id, cancellationToken);

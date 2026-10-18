@@ -27,6 +27,7 @@ public class VentaService : IVentaService
     private readonly IMovimientoInventarioRepository _movimientoRepository;
     private readonly IRepository<Sucursal> _sucursalRepository;
     private readonly IRepository<NegocioEntidad> _negocioRepository;
+    private readonly IRepository<Cliente> _clienteRepository;
     private readonly IPosSettings _posSettings;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -39,6 +40,7 @@ public class VentaService : IVentaService
         IMovimientoInventarioRepository movimientoRepository,
         IRepository<Sucursal> sucursalRepository,
         IRepository<NegocioEntidad> negocioRepository,
+        IRepository<Cliente> clienteRepository,
         IPosSettings posSettings,
         IUnitOfWork unitOfWork,
         IDateTimeProvider dateTimeProvider)
@@ -50,6 +52,7 @@ public class VentaService : IVentaService
         _movimientoRepository = movimientoRepository;
         _sucursalRepository = sucursalRepository;
         _negocioRepository = negocioRepository;
+        _clienteRepository = clienteRepository;
         _posSettings = posSettings;
         _unitOfWork = unitOfWork;
         _dateTimeProvider = dateTimeProvider;
@@ -81,7 +84,7 @@ public class VentaService : IVentaService
     {
         var metodos = await _metodoPagoRepository.ListarActivosAsync(cancellationToken);
         return metodos
-            .Select(m => new MetodoPagoDto(m.Id, m.Nombre, !EsCredito(m)))
+            .Select(m => new MetodoPagoDto(m.Id, m.Nombre, true))
             .ToList();
     }
 
@@ -186,9 +189,29 @@ public class VentaService : IVentaService
             inventarios[grupo.Key] = inventario;
         }
 
-        // 3) Pagos: deben cuadrar exactamente con el total.
-        var pagosValidados = await ValidarPagosAsync(request.Pagos, total, cancellationToken);
+        // 3) Cliente (opcional, obligatorio si hay pago a credito) y pagos: deben
+        //    cuadrar exactamente con el total.
+        Cliente? cliente = null;
+        if (request.ClienteId is not null)
+        {
+            cliente = await _clienteRepository.GetByIdAsync(request.ClienteId.Value, cancellationToken);
+            if (cliente is null || !cliente.Activo)
+            {
+                return Fail(VentaResultCode.ClienteNoEncontrado, "El cliente de la venta no existe o esta dado de baja.");
+            }
+        }
+
+        var pagosValidados = await ValidarPagosAsync(request.Pagos, total, cliente, cancellationToken);
         if (pagosValidados.Error is not null) return pagosValidados.Error;
+
+        // RF-CRED-001: lo que se carga a credito no puede pasar del credito disponible.
+        var credito = pagosValidados.Pagos.Where(p => EsCredito(p.Metodo)).Sum(p => p.Importe);
+        if (credito > 0 && credito > cliente!.CreditoDisponible)
+        {
+            return Fail(
+                VentaResultCode.CreditoExcedido,
+                $"El credito solicitado ({credito:0.00}) excede el disponible de {cliente.Nombre}: {cliente.CreditoDisponible:0.00} (limite {cliente.LimiteCredito:0.00}, debe {cliente.SaldoCredito:0.00}).");
+        }
 
         // 4) Todo valido: ahora si se modifica el estado.
         var ahora = _dateTimeProvider.UtcNow;
@@ -196,6 +219,7 @@ public class VentaService : IVentaService
         {
             SucursalId = sucursal.Id,
             UsuarioId = usuarioId,
+            ClienteId = cliente?.Id,
             Subtotal = subtotal,
             Descuento = descuentoTotal,
             Total = total,
@@ -223,6 +247,12 @@ public class VentaService : IVentaService
 
         await _ventaRepository.AddAsync(venta, cancellationToken);
 
+        if (credito > 0)
+        {
+            cliente!.SaldoCredito += credito;
+            cliente.FechaActualizacion = ahora;
+        }
+
         foreach (var (corteId, inventario) in inventarios)
         {
             inventario.StockActual -= lineas.Where(l => l.Corte.Id == corteId).Sum(l => l.Cantidad);
@@ -249,7 +279,7 @@ public class VentaService : IVentaService
         }
         catch (ConcurrencyConflictException)
         {
-            return Fail(VentaResultCode.Conflicto, "El inventario cambio mientras se registraba la venta. Revisa el stock e intenta de nuevo.");
+            return Fail(VentaResultCode.Conflicto, "El inventario o el saldo del cliente cambio mientras se registraba la venta. Revisa e intenta de nuevo.");
         }
 
         var completa = await _ventaRepository.GetByIdCompletoAsync(venta.Id, cancellationToken);
@@ -295,6 +325,15 @@ public class VentaService : IVentaService
             }, cancellationToken);
         }
 
+        // RF-CRED: si parte de la venta fue a credito, esa deuda deja de existir. Si el
+        // cliente ya la habia abonado, el saldo queda en cero (no se maneja saldo a favor).
+        var creditoVenta = venta.Pagos.Where(p => EsCredito(p.MetodoPago)).Sum(p => p.Importe);
+        if (creditoVenta > 0 && venta.Cliente is not null)
+        {
+            venta.Cliente.SaldoCredito = Math.Max(0m, venta.Cliente.SaldoCredito - creditoVenta);
+            venta.Cliente.FechaActualizacion = ahora;
+        }
+
         venta.Estado = EstadoVenta.Anulada;
         venta.MotivoAnulacion = motivoLimpio;
 
@@ -304,7 +343,7 @@ public class VentaService : IVentaService
         }
         catch (ConcurrencyConflictException)
         {
-            return Fail(VentaResultCode.Conflicto, "El inventario cambio mientras se anulaba la venta. Intenta de nuevo.");
+            return Fail(VentaResultCode.Conflicto, "El inventario o el saldo del cliente cambio mientras se anulaba la venta. Intenta de nuevo.");
         }
 
         return VentaResultDto<VentaDto>.Ok(Mapear(venta));
@@ -313,6 +352,7 @@ public class VentaService : IVentaService
     private async Task<(VentaResultDto<VentaDto>? Error, List<(MetodoPago Metodo, decimal Importe)> Pagos)> ValidarPagosAsync(
         IReadOnlyList<VentaPagoRequest>? pagos,
         decimal total,
+        Cliente? cliente,
         CancellationToken cancellationToken)
     {
         var resultado = new List<(MetodoPago, decimal)>();
@@ -335,9 +375,9 @@ public class VentaService : IVentaService
                 return (Fail(VentaResultCode.MetodoPagoNoEncontrado, "Uno de los metodos de pago no existe o esta desactivado."), resultado);
             }
 
-            if (EsCredito(metodo))
+            if (EsCredito(metodo) && cliente is null)
             {
-                return (Fail(VentaResultCode.MetodoPagoNoDisponible, "La venta a credito requiere un cliente y se habilita en un sprint posterior."), resultado);
+                return (Fail(VentaResultCode.MetodoPagoNoDisponible, "Para vender a credito primero elige un cliente."), resultado);
             }
 
             resultado.Add((metodo, Math.Round(pago.Importe, 2, MidpointRounding.AwayFromZero)));
@@ -436,7 +476,9 @@ public class VentaService : IVentaService
             .ToList(),
         venta.Pagos
             .Select(p => new VentaPagoDto(p.MetodoPagoId, p.MetodoPago.Nombre, p.Importe))
-            .ToList());
+            .ToList(),
+        venta.ClienteId,
+        venta.Cliente?.Nombre);
 
     private async Task<Sucursal?> ObtenerSucursalPrincipalAsync(CancellationToken cancellationToken)
     {

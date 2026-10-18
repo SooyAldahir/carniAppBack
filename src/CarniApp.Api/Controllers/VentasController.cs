@@ -82,11 +82,12 @@ public class VentasController : ControllerBase
 
         return resultado.Code switch
         {
-            VentaResultCode.VentaNoEncontrada => NotFound(new { mensaje = resultado.Mensaje }),
+            VentaResultCode.VentaNoEncontrada or VentaResultCode.ClienteNoEncontrado => NotFound(new { mensaje = resultado.Mensaje }),
             VentaResultCode.DescuentoNoAutorizado => StatusCode(StatusCodes.Status403Forbidden, new { mensaje = resultado.Mensaje }),
             VentaResultCode.StockInsuficiente
                 or VentaResultCode.SinSucursalActiva
                 or VentaResultCode.VentaYaAnulada
+                or VentaResultCode.CreditoExcedido
                 or VentaResultCode.Conflicto => Conflict(new { mensaje = resultado.Mensaje }),
             _ => BadRequest(new { mensaje = resultado.Mensaje })
         };

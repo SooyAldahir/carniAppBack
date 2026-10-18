@@ -38,6 +38,8 @@ public static class DependencyInjection
         services.AddScoped<IMovimientoInventarioRepository, Persistence.MovimientoInventarioRepository>();
         services.AddScoped<IMetodoPagoRepository, Persistence.MetodoPagoRepository>();
         services.AddScoped<IVentaRepository, Persistence.VentaRepository>();
+        services.AddScoped<IClienteRepository, Persistence.ClienteRepository>();
+        services.AddScoped<IAbonoCreditoRepository, Persistence.AbonoCreditoRepository>();
 
         services.AddSingleton<IDateTimeProvider, DateTimeProvider>();
         services.AddSingleton<IPosSettings, PosSettings>();
@@ -49,6 +51,7 @@ public static class DependencyInjection
         services.AddScoped<ICatalogoService, CatalogoService>();
         services.AddScoped<IInventarioService, InventarioService>();
         services.AddScoped<IVentaService, VentaService>();
+        services.AddScoped<IClienteService, ClienteService>();
 
         return services;
     }

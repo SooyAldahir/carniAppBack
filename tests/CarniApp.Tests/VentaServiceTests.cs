@@ -41,6 +41,7 @@ public class VentaServiceTests : IDisposable
         new MovimientoInventarioRepository(ctx),
         new Repository<Sucursal>(ctx),
         new Repository<CarniApp.Domain.Entities.Negocio>(ctx),
+        new Repository<Cliente>(ctx),
         _posSettings,
         new UnitOfWork(ctx),
         _clock);
@@ -225,8 +226,26 @@ public class VentaServiceTests : IDisposable
         Assert.Equal(VentaResultCode.MetodoPagoNoEncontrado, (await Vender(linea, new[] { new VentaPagoRequest(Guid.NewGuid(), 100m) })).Code);
     }
 
+    private Guid SembrarCliente(decimal limite, decimal saldo = 0m, string nombre = "Don Pepe")
+    {
+        using var ctx = _db.NuevoContexto();
+        var c = new Cliente { Nombre = nombre, LimiteCredito = limite, SaldoCredito = saldo };
+        ctx.Clientes.Add(c);
+        ctx.SaveChanges();
+        return c.Id;
+    }
+
+    private async Task<decimal> SaldoDe(Guid clienteId)
+    {
+        using var ctx = _db.NuevoContexto();
+        return (await ctx.Clientes.SingleAsync(c => c.Id == clienteId)).SaldoCredito;
+    }
+
+    private Task<VentaResultDto<VentaDto>> VenderACliente(Guid? clienteId, IReadOnlyList<VentaLineaRequest> lineas, IReadOnlyList<VentaPagoRequest> pagos) =>
+        Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, clienteId), Usuario()));
+
     [Fact]
-    public async Task Venta_ACredito_NoEstaDisponibleTodavia()
+    public async Task Venta_ACredito_SinCliente_SeRechaza()
     {
         var corte = await CorteConStock(10m, precio: 100m);
 
@@ -235,6 +254,147 @@ public class VentaServiceTests : IDisposable
             new[] { new VentaPagoRequest(_creditoId, 100m) });
 
         Assert.Equal(VentaResultCode.MetodoPagoNoDisponible, r.Code);
+        Assert.Equal(10m, await StockDe(corte.Id));
+    }
+
+    [Fact]
+    public async Task Venta_ACredito_SubeElSaldo_YGuardaElCliente()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_creditoId, 300m) });
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(cliente, r.Datos!.ClienteId);
+        Assert.Equal("Don Pepe", r.Datos.ClienteNombre);
+        Assert.Equal(300m, await SaldoDe(cliente));
+        Assert.Equal(7m, await StockDe(corte.Id));
+    }
+
+    [Fact]
+    public async Task Venta_ACredito_Parcial_SoloLoFiadoSumaAlSaldo()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m), new VentaPagoRequest(_creditoId, 200m) });
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(200m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Venta_ACredito_QueExcedeElDisponible_SeRechazaSinTocarNada()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, saldo: 300m);   // disponible: 200
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 3m) },
+            new[] { new VentaPagoRequest(_creditoId, 300m) });
+
+        Assert.Equal(VentaResultCode.CreditoExcedido, r.Code);
+        Assert.Equal(300m, await SaldoDe(cliente));
+        Assert.Equal(10m, await StockDe(corte.Id));
+    }
+
+    [Fact]
+    public async Task Venta_ConClienteInexistente_SeRechaza()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+
+        var r = await VenderACliente(Guid.NewGuid(),
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m) });
+
+        Assert.Equal(VentaResultCode.ClienteNoEncontrado, r.Code);
+    }
+
+    [Fact]
+    public async Task Venta_ConCliente_PeroPagadaEnEfectivo_NoTocaElSaldo()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, saldo: 50m);
+
+        var r = await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_efectivoId, 100m) });
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(50m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Anular_VentaACredito_QuitaLaDeudaDelCliente()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, saldo: 100m);
+        var venta = (await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 2m) },
+            new[] { new VentaPagoRequest(_creditoId, 200m) })).Datos!;
+        Assert.Equal(300m, await SaldoDe(cliente));
+
+        var r = await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()));
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(100m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Anular_VentaACredito_YaAbonada_DejaElSaldoEnCeroSinNegativos()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m);
+        var venta = (await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 2m) },
+            new[] { new VentaPagoRequest(_creditoId, 200m) })).Datos!;
+        using (var ctx = _db.NuevoContexto())
+        {
+            ctx.Clientes.Single(c => c.Id == cliente).SaldoCredito = 50m;   // ya abono 150
+            ctx.SaveChanges();
+        }
+
+        Assert.True((await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()))).Exitoso);
+        Assert.Equal(0m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task DosCargosSimultaneos_AlSaldo_ElSegundoFallaPorConcurrencia()
+    {
+        var cliente = SembrarCliente(limite: 300m);
+
+        // Dos cajas leen el mismo saldo (0) antes de que cualquiera guarde.
+        using var ctxA = _db.NuevoContexto();
+        using var ctxB = _db.NuevoContexto();
+        var cA = await ctxA.Clientes.SingleAsync(c => c.Id == cliente);
+        var cB = await ctxB.Clientes.SingleAsync(c => c.Id == cliente);
+
+        cA.SaldoCredito += 200m;
+        await new UnitOfWork(ctxA).SaveChangesAsync();
+
+        cB.SaldoCredito += 200m;
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => new UnitOfWork(ctxB).SaveChangesAsync());
+
+        Assert.Equal(200m, await SaldoDe(cliente));
+    }
+
+    [Fact]
+    public async Task Ticket_MuestraElNombreDelCliente()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, nombre: "Dona Lupe");
+        var venta = (await VenderACliente(cliente,
+            new[] { new VentaLineaRequest(corte.Id, 1m) },
+            new[] { new VentaPagoRequest(_creditoId, 100m) })).Datos!;
+
+        var ticket = await Con(s => s.ObtenerTicketAsync(venta.Id));
+
+        Assert.Contains("Cliente: Dona Lupe", ticket.Datos!.Texto);
     }
 
     [Fact]
@@ -343,7 +503,7 @@ public class VentaServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Catalogo_MuestraPrecioYStock_YMetodosMarcanCreditoNoDisponible()
+    public async Task Catalogo_MuestraPrecioYStock_YMetodosDePago()
     {
         var corte = await CorteConStock(7m, precio: 99m, nombre: "Arrachera");
 
@@ -353,7 +513,7 @@ public class VentaServiceTests : IDisposable
         Assert.Equal(7m, item.StockActual);
 
         var metodos = await Con(s => s.ListarMetodosPagoAsync());
-        Assert.False(metodos.Single(m => m.Nombre == "Credito").Disponible);
+        Assert.True(metodos.Single(m => m.Nombre == "Credito").Disponible);
         Assert.True(metodos.Single(m => m.Nombre == "Efectivo").Disponible);
     }
 
