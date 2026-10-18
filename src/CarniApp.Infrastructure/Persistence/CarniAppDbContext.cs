@@ -1,12 +1,14 @@
 using CarniApp.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace CarniApp.Infrastructure.Persistence;
 
 /// <summary>
 /// DbContext principal. Sprint 0: Negocio, Sucursal, Rol, Permiso,
 /// Usuario. Sprint 1: RefreshToken. Sprint 2: TipoAnimal, Corte.
-/// Sprint 3: Inventario, MovimientoInventario. El resto de modulos se
+/// Sprint 3: Inventario, MovimientoInventario. Sprint 4: MetodoPago,
+/// Venta, VentaDetalle, VentaPago. El resto de modulos se
 /// agregan conforme avanzan los siguientes sprints.
 ///
 /// IMPORTANTE: los scripts SQL en Database/Scripts/ crean las tablas
@@ -33,6 +35,10 @@ public class CarniAppDbContext : DbContext
     public DbSet<Corte> Cortes => Set<Corte>();
     public DbSet<Inventario> Inventarios => Set<Inventario>();
     public DbSet<MovimientoInventario> MovimientosInventario => Set<MovimientoInventario>();
+    public DbSet<MetodoPago> MetodosPago => Set<MetodoPago>();
+    public DbSet<Venta> Ventas => Set<Venta>();
+    public DbSet<VentaDetalle> VentasDetalle => Set<VentaDetalle>();
+    public DbSet<VentaPago> VentasPago => Set<VentaPago>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +53,10 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<Corte>().ToTable("Corte");
         modelBuilder.Entity<Inventario>().ToTable("Inventario");
         modelBuilder.Entity<MovimientoInventario>().ToTable("MovimientoInventario");
+        modelBuilder.Entity<MetodoPago>().ToTable("MetodoPago");
+        modelBuilder.Entity<Venta>().ToTable("Venta");
+        modelBuilder.Entity<VentaDetalle>().ToTable("VentaDetalle");
+        modelBuilder.Entity<VentaPago>().ToTable("VentaPago");
 
         modelBuilder.Entity<RolPermiso>(entity =>
         {
@@ -97,7 +107,10 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<Inventario>(entity =>
         {
             entity.HasKey(i => i.Id);
-            entity.Property(i => i.StockActual).HasColumnType("decimal(10,3)");
+            // Token de concurrencia: si dos operaciones leen el mismo stock y ambas lo
+            // modifican, la segunda falla en vez de pisar a la primera (evita sobreventa,
+            // RF-POS-011). Funciona sin cambiar el esquema SQL.
+            entity.Property(i => i.StockActual).HasColumnType("decimal(10,3)").IsConcurrencyToken();
             entity.HasIndex(i => new { i.CorteId, i.SucursalId }).IsUnique();
 
             entity.HasOne(i => i.Corte).WithMany().HasForeignKey(i => i.CorteId);
@@ -113,6 +126,54 @@ public class CarniAppDbContext : DbContext
             entity.HasOne(m => m.Corte).WithMany().HasForeignKey(m => m.CorteId);
             entity.HasOne(m => m.Sucursal).WithMany().HasForeignKey(m => m.SucursalId);
             entity.HasOne(m => m.Usuario).WithMany().HasForeignKey(m => m.UsuarioId);
+        });
+
+        modelBuilder.Entity<Venta>(entity =>
+        {
+            entity.HasKey(v => v.Id);
+
+            // Folio es IDENTITY en SQL Server. Con SQLite (solo pruebas) no existe ese
+            // concepto, asi que se deja un valor por defecto para que el INSERT funcione.
+            var folio = entity.Property(v => v.Folio).ValueGeneratedOnAdd();
+            folio.Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Ignore);
+            if (Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                folio.HasDefaultValue(0);
+            }
+
+            entity.Property(v => v.Subtotal).HasColumnType("decimal(10,2)");
+            entity.Property(v => v.Descuento).HasColumnType("decimal(10,2)");
+            entity.Property(v => v.Total).HasColumnType("decimal(10,2)");
+            entity.Property(v => v.Estado).HasMaxLength(20);
+            entity.Property(v => v.MotivoAnulacion).HasMaxLength(300);
+            entity.HasIndex(v => v.Fecha);
+
+            entity.HasOne(v => v.Sucursal).WithMany().HasForeignKey(v => v.SucursalId);
+            entity.HasOne(v => v.Usuario).WithMany().HasForeignKey(v => v.UsuarioId);
+            entity.HasMany(v => v.Detalles).WithOne(d => d.Venta).HasForeignKey(d => d.VentaId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(v => v.Pagos).WithOne(p => p.Venta).HasForeignKey(p => p.VentaId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VentaDetalle>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Cantidad).HasColumnType("decimal(10,3)");
+            entity.Property(d => d.PrecioUnitario).HasColumnType("decimal(10,2)");
+            entity.Property(d => d.Importe).HasColumnType("decimal(10,2)");
+            entity.HasOne(d => d.Corte).WithMany().HasForeignKey(d => d.CorteId);
+        });
+
+        modelBuilder.Entity<VentaPago>(entity =>
+        {
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Importe).HasColumnType("decimal(10,2)");
+            entity.HasOne(p => p.MetodoPago).WithMany().HasForeignKey(p => p.MetodoPagoId);
+        });
+
+        modelBuilder.Entity<MetodoPago>(entity =>
+        {
+            entity.HasKey(m => m.Id);
+            entity.Property(m => m.Nombre).HasMaxLength(50);
         });
 
         base.OnModelCreating(modelBuilder);

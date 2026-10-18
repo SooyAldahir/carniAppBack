@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using CarniApp.Application.Common.Exceptions;
 using CarniApp.Application.Common.Interfaces;
 using CarniApp.Domain.Common;
+using Microsoft.EntityFrameworkCore;
 
 namespace CarniApp.Infrastructure.Persistence;
 
@@ -21,6 +23,16 @@ public class UnitOfWork : IUnitOfWork
             _ => new Repository<T>(_context));
     }
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        _context.SaveChangesAsync(cancellationToken);
+    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            throw new ConcurrencyConflictException(
+                "Otro proceso modifico los mismos datos al mismo tiempo.", ex);
+        }
+    }
 }
