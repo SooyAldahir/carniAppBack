@@ -2,6 +2,7 @@ using CarniApp.Application.Common.Interfaces;
 using CarniApp.Application.Features.Auth;
 using CarniApp.Application.Features.Negocio;
 using CarniApp.Application.Features.Catalogos;
+using CarniApp.Application.Features.Clientes;
 using CarniApp.Application.Features.Inventario;
 using CarniApp.Application.Features.Ventas;
 using CarniApp.Infrastructure.Security;
