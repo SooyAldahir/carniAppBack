@@ -1,0 +1,27 @@
+name: CI backend
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Restaurar
+        run: dotnet restore CarniApp.sln
+      - name: Compilar
+        run: dotnet build CarniApp.sln --no-restore -c Release
+      - name: Pruebas
+        run: dotnet test CarniApp.sln --no-build -c Release --logger "trx;LogFileName=resultados.trx"
+      - name: Resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-pruebas
+          path: '**/resultados.trx'
