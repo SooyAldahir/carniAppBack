@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CarniApp.Infrastructure\CarniApp.Infrastructure.csproj" />
+    <!-- Las pruebas de contrato revisan por reflexion los controllers y su seguridad. -->
+    <ProjectReference Include="..\..\src\CarniApp.Api\CarniApp.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
