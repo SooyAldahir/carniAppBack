@@ -42,6 +42,8 @@ public class CarniAppDbContext : DbContext
     public DbSet<Cliente> Clientes => Set<Cliente>();
     public DbSet<AbonoCredito> AbonosCredito => Set<AbonoCredito>();
     public DbSet<LoteAnimal> LotesAnimal => Set<LoteAnimal>();
+    public DbSet<CorteCaja> CortesCaja => Set<CorteCaja>();
+    public DbSet<GastoCaja> GastosCaja => Set<GastoCaja>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +57,8 @@ public class CarniAppDbContext : DbContext
         modelBuilder.Entity<TipoAnimal>().ToTable("TipoAnimal");
         modelBuilder.Entity<Corte>().ToTable("Corte");
         modelBuilder.Entity<LoteAnimal>().ToTable("LoteAnimal");
+        modelBuilder.Entity<CorteCaja>().ToTable("CorteCaja");
+        modelBuilder.Entity<GastoCaja>().ToTable("GastoCaja");
         modelBuilder.Entity<Inventario>().ToTable("Inventario");
         modelBuilder.Entity<MovimientoInventario>().ToTable("MovimientoInventario");
         modelBuilder.Entity<MetodoPago>().ToTable("MetodoPago");
@@ -110,6 +114,31 @@ public class CarniAppDbContext : DbContext
             entity.HasOne(c => c.TipoAnimal)
                 .WithMany(t => t.Cortes)
                 .HasForeignKey(c => c.TipoAnimalId);
+        });
+
+        modelBuilder.Entity<CorteCaja>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.FondoInicial).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.TotalVentas).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.TotalGastos).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.EfectivoEsperado).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.EfectivoContado).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.Diferencia).HasColumnType("decimal(10,2)");
+            entity.Property(c => c.Estado).HasMaxLength(20);
+            entity.Property(c => c.Notas).HasMaxLength(300);
+
+            entity.HasOne(c => c.Sucursal).WithMany().HasForeignKey(c => c.SucursalId);
+            entity.HasOne(c => c.Usuario).WithMany().HasForeignKey(c => c.UsuarioId);
+            entity.HasMany(c => c.Gastos).WithOne(g => g.CorteCaja).HasForeignKey(g => g.CorteCajaId);
+        });
+
+        modelBuilder.Entity<GastoCaja>(entity =>
+        {
+            entity.HasKey(g => g.Id);
+            entity.Property(g => g.Concepto).HasMaxLength(100);
+            entity.Property(g => g.Importe).HasColumnType("decimal(10,2)");
+            entity.HasOne(g => g.Usuario).WithMany().HasForeignKey(g => g.UsuarioId);
         });
 
         modelBuilder.Entity<LoteAnimal>(entity =>

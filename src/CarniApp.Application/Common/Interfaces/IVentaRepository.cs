@@ -11,4 +11,7 @@ public interface IVentaRepository
 
     /// <summary>Ventas con Fecha en [desdeUtc, hastaUtc), mas recientes primero.</summary>
     Task<IReadOnlyList<Venta>> ListarPorRangoAsync(DateTime desdeUtc, DateTime hastaUtc, CancellationToken cancellationToken = default);
+
+    /// <summary>Ventas de la sucursal con Fecha en [desdeUtc, hastaUtc), con pagos y metodo de pago (para el corte de caja).</summary>
+    Task<IReadOnlyList<Venta>> ListarConPagosPorRangoAsync(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc, CancellationToken cancellationToken = default);
 }

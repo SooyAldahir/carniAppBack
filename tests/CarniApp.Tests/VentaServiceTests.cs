@@ -42,6 +42,7 @@ public class VentaServiceTests : IDisposable
         new Repository<Sucursal>(ctx),
         new Repository<CarniApp.Domain.Entities.Negocio>(ctx),
         new Repository<Cliente>(ctx),
+        new CorteCajaRepository(ctx),
         _posSettings,
         new UnitOfWork(ctx),
         _clock);
@@ -1013,5 +1014,47 @@ public class VentaServiceTests : IDisposable
 
         Assert.Contains("VENTA ANULADA", ticket);
         Assert.Equal(VentaResultCode.VentaNoEncontrada, (await Con(s => s.ObtenerTicketAsync(Guid.NewGuid()))).Code);
+    }
+
+    // ------------------------------------------------------------ corte de caja cerrado
+
+    private async Task CrearCorteCajaAsync(string estado, DateTime inicio, DateTime? cierre)
+    {
+        using var ctx = _db.NuevoContexto();
+        var sucursal = await ctx.Sucursales.FirstAsync();
+        ctx.CortesCaja.Add(new CorteCaja
+        {
+            SucursalId = sucursal.Id,
+            UsuarioId = Usuario(),
+            FechaInicio = inicio,
+            FechaCierre = cierre,
+            Estado = estado
+        });
+        await ctx.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task Anular_VentaDeUnCorteCerrado_SeRechaza()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var venta = (await VenderUno(corte, 1m, 100m)).Datos!;
+        await CrearCorteCajaAsync(EstadoCorteCaja.Cerrado, _clock.Now.AddHours(-1), _clock.Now.AddHours(1));
+
+        var r = await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()));
+
+        Assert.Equal(VentaResultCode.CorteCerrado, r.Code);
+        Assert.Equal(9m, await StockDe(corte.Id));   // el stock no se repuso
+    }
+
+    [Fact]
+    public async Task Anular_VentaDeUnCorteAbierto_SePermite()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var venta = (await VenderUno(corte, 1m, 100m)).Datos!;
+        await CrearCorteCajaAsync(EstadoCorteCaja.Abierto, _clock.Now.AddHours(-1), null);
+
+        var r = await Con(s => s.AnularAsync(venta.Id, "Error", Usuario()));
+
+        Assert.True(r.Exitoso, r.Mensaje);
     }
 }

@@ -108,20 +108,20 @@ public static class TicketBuilder
         if (actual.Length > 0) yield return actual.ToString();
     }
 
-    private static string Dinero(decimal valor) => "$" + valor.ToString("N2", Cultura);
+    internal static string Dinero(decimal valor) => "$" + valor.ToString("N2", Cultura);
 
-    private static string Linea() => new('-', Ancho);
+    internal static string Linea() => new('-', Ancho);
 
-    private static string Recortar(string texto, int max) => texto.Length <= max ? texto : texto[..max];
+    internal static string Recortar(string texto, int max) => texto.Length <= max ? texto : texto[..max];
 
-    private static string Centrar(string texto)
+    internal static string Centrar(string texto)
     {
         texto = Recortar(texto, Ancho);
         return new string(' ', (Ancho - texto.Length) / 2) + texto;
     }
 
     /// <summary>Texto a la izquierda y valor pegado a la derecha, en exactamente 'Ancho' columnas.</summary>
-    private static string Fila(string izquierda, string derecha)
+    internal static string Fila(string izquierda, string derecha)
     {
         var espacioIzq = Ancho - derecha.Length - 1;
         if (espacioIzq < 1) return Recortar(izquierda + " " + derecha, Ancho);

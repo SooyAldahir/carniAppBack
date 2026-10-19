@@ -28,6 +28,7 @@ public class VentaService : IVentaService
     private readonly IRepository<Sucursal> _sucursalRepository;
     private readonly IRepository<NegocioEntidad> _negocioRepository;
     private readonly IRepository<Cliente> _clienteRepository;
+    private readonly ICorteCajaRepository _corteCajaRepository;
     private readonly IPosSettings _posSettings;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IDateTimeProvider _dateTimeProvider;
@@ -41,6 +42,7 @@ public class VentaService : IVentaService
         IRepository<Sucursal> sucursalRepository,
         IRepository<NegocioEntidad> negocioRepository,
         IRepository<Cliente> clienteRepository,
+        ICorteCajaRepository corteCajaRepository,
         IPosSettings posSettings,
         IUnitOfWork unitOfWork,
         IDateTimeProvider dateTimeProvider)
@@ -53,6 +55,7 @@ public class VentaService : IVentaService
         _sucursalRepository = sucursalRepository;
         _negocioRepository = negocioRepository;
         _clienteRepository = clienteRepository;
+        _corteCajaRepository = corteCajaRepository;
         _posSettings = posSettings;
         _unitOfWork = unitOfWork;
         _dateTimeProvider = dateTimeProvider;
@@ -355,6 +358,11 @@ public class VentaService : IVentaService
             return Fail(VentaResultCode.VentaYaAnulada, "Esta venta ya estaba anulada.");
         }
 
+        if (await _corteCajaRepository.ExisteCerradoQueContieneAsync(venta.SucursalId, venta.Fecha, cancellationToken))
+        {
+            return Fail(VentaResultCode.CorteCerrado, "Esta venta pertenece a un corte de caja ya cerrado. Reabre el corte para anularla.");
+        }
+
         var ahora = _dateTimeProvider.UtcNow;
         var motivoLimpio = motivo.Trim();
 
@@ -486,7 +494,7 @@ public class VentaService : IVentaService
         return VentaResultDto<TicketDto>.Ok(new TicketDto(TicketBuilder.Construir(Mapear(venta), negocio, zona)));
     }
 
-    private static TimeZoneInfo ResolverZonaHoraria(string? id)
+    internal static TimeZoneInfo ResolverZonaHoraria(string? id)
     {
         if (string.IsNullOrWhiteSpace(id)) return TimeZoneInfo.Utc;
         try

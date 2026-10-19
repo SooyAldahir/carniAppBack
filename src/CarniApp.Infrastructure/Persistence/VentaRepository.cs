@@ -31,4 +31,11 @@ public class VentaRepository : IVentaRepository
             .Where(v => v.Fecha >= desdeUtc && v.Fecha < hastaUtc)
             .OrderByDescending(v => v.Fecha)
             .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<Venta>> ListarConPagosPorRangoAsync(Guid sucursalId, DateTime desdeUtc, DateTime hastaUtc, CancellationToken cancellationToken = default) =>
+        await _context.Ventas
+            .AsNoTracking()
+            .Include(v => v.Pagos).ThenInclude(p => p.MetodoPago)
+            .Where(v => v.SucursalId == sucursalId && v.Fecha >= desdeUtc && v.Fecha < hastaUtc)
+            .ToListAsync(cancellationToken);
 }

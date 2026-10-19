@@ -95,6 +95,7 @@ public class VentasController : ControllerBase
             VentaResultCode.StockInsuficiente
                 or VentaResultCode.SinSucursalActiva
                 or VentaResultCode.VentaYaAnulada
+                or VentaResultCode.CorteCerrado
                 or VentaResultCode.CreditoExcedido
                 or VentaResultCode.Conflicto => Conflict(new { mensaje = resultado.Mensaje }),
             _ => BadRequest(new { mensaje = resultado.Mensaje })

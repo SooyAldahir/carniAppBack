@@ -96,6 +96,7 @@ public enum VentaResultCode
     VentaNoEncontrada,
     VentaYaAnulada,
     MotivoRequerido,
+    CorteCerrado,
     Conflicto
 }
 

@@ -7,6 +7,7 @@ namespace CarniApp.Domain.Entities;
 public class MetodoPago
 {
     public const string NombreCredito = "Credito";
+    public const string NombreEfectivo = "Efectivo";
 
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Nombre { get; set; } = string.Empty;
