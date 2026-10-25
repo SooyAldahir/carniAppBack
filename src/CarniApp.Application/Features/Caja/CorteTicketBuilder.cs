@@ -31,6 +31,7 @@ public static class CorteTicketBuilder
         sb.AppendLine(TicketBuilder.Fila("+ Ventas efectivo", TicketBuilder.Dinero(c.VentasEfectivo)));
         sb.AppendLine(TicketBuilder.Fila("+ Abonos credito", TicketBuilder.Dinero(c.AbonosEfectivo)));
         sb.AppendLine(TicketBuilder.Fila("- Gastos", TicketBuilder.Dinero(c.TotalGastos)));
+        if (c.TotalRetiros > 0) sb.AppendLine(TicketBuilder.Fila("- Retiros", TicketBuilder.Dinero(c.TotalRetiros)));
         sb.AppendLine(TicketBuilder.Fila("= Esperado", TicketBuilder.Dinero(c.EfectivoEsperado)));
 
         if (c.EfectivoContado is not null)
@@ -41,11 +42,20 @@ public static class CorteTicketBuilder
             sb.AppendLine(TicketBuilder.Fila(etiqueta, TicketBuilder.Dinero(Math.Abs(d))));
         }
 
-        if (c.Gastos.Count > 0)
+        var soloGastos = c.Gastos.Where(g => g.Tipo != "Retiro").ToList();
+        var soloRetiros = c.Gastos.Where(g => g.Tipo == "Retiro").ToList();
+        if (soloGastos.Count > 0)
         {
             sb.AppendLine(TicketBuilder.Linea());
             sb.AppendLine("Gastos:");
-            foreach (var g in c.Gastos) sb.AppendLine(TicketBuilder.Fila(g.Concepto, TicketBuilder.Dinero(g.Importe)));
+            foreach (var g in soloGastos) sb.AppendLine(TicketBuilder.Fila(g.Concepto, TicketBuilder.Dinero(g.Importe)));
+        }
+
+        if (soloRetiros.Count > 0)
+        {
+            sb.AppendLine(TicketBuilder.Linea());
+            sb.AppendLine("Retiros:");
+            foreach (var g in soloRetiros) sb.AppendLine(TicketBuilder.Fila(g.Concepto, TicketBuilder.Dinero(g.Importe)));
         }
 
         if (!string.IsNullOrWhiteSpace(c.Notas))

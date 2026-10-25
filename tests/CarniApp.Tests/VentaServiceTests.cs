@@ -423,9 +423,45 @@ public class VentaServiceTests : IDisposable
         Assert.True(sinNota.Exitoso, sinNota.Mensaje);
         Assert.Null(sinNota.Datos!.Nota);
 
-        var larga = await Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, null, new string('x', 201)), Usuario()));
+        var larga = await Con(s => s.CrearAsync(new CrearVentaRequest(lineas, pagos, 0m, null, new string('x', 501)), Usuario()));
         Assert.Equal(VentaResultCode.NotaInvalida, larga.Code);
         Assert.Equal(9m, await StockDe(corte.Id));   // solo se vendio la primera
+    }
+
+    [Fact]
+    public async Task Nota_ConSaltosDeLinea_AceptaHasta500_NoRepiteDireccion_YUsaElPieDelNegocio()
+    {
+        var corte = await CorteConStock(10m, precio: 100m);
+        var cliente = SembrarCliente(limite: 500m, nombre: "Dona Lupe");
+        using (var ctx = _db.NuevoContexto())
+        {
+            ctx.Clientes.Single(c => c.Id == cliente).Direccion = "Av. Siempre Viva 742";
+            ctx.Negocios.Add(new CarniApp.Domain.Entities.Negocio { NombreComercial = "Carniceria Lupe", PieTicket = "Vuelva pronto" });
+            ctx.SaveChanges();
+        }
+
+        var nota = "Dir: Av. Siempre Viva 742\nRef: porton negro frente al OXXO\nLlevar cambio de 500";
+        var venta = (await Con(s => s.CrearAsync(
+            new CrearVentaRequest(
+                new[] { new VentaLineaRequest(corte.Id, 1m) },
+                new[] { new VentaPagoRequest(_efectivoId, 100m) },
+                0m, cliente, nota),
+            Usuario()))).Datos!;
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(venta.Id))).Datos!.Texto;
+
+        Assert.Equal(nota, venta.Nota);
+        Assert.Equal(1, ticket.Split("Av. Siempre Viva 742").Length - 1);   // la direccion sale una sola vez
+        Assert.Contains("Nota: Dir: Av. Siempre Viva 742", ticket);
+        Assert.Contains("Ref: porton negro frente al OXXO", ticket);
+        Assert.Contains("Llevar cambio de 500", ticket);
+        Assert.Contains("Vuelva pronto", ticket);
+        Assert.DoesNotContain("Gracias por su compra", ticket);
+        Assert.All(ticket.Split('\n'), linea => Assert.True(linea.TrimEnd('\r').Length <= 32, $"Linea de mas de 32 columnas: '{linea}'"));
+
+        var justo500 = await Con(s => s.CrearAsync(new CrearVentaRequest(
+            new[] { new VentaLineaRequest(corte.Id, 1m) }, new[] { new VentaPagoRequest(_efectivoId, 100m) }, 0m, null, new string('x', 500)), Usuario()));
+        Assert.True(justo500.Exitoso, justo500.Mensaje);
     }
 
     // ---------------- Cargo por credito (visible) ----------------

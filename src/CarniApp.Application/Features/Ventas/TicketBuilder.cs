@@ -28,7 +28,8 @@ public static class TicketBuilder
         sb.AppendLine(Fila($"Folio: {venta.Folio}", local.ToString("dd/MM/yyyy HH:mm", Cultura)));
         if (!string.IsNullOrWhiteSpace(venta.UsuarioNombre)) sb.AppendLine(Recortar($"Atendio: {venta.UsuarioNombre}", Ancho));
         if (!string.IsNullOrWhiteSpace(venta.ClienteNombre)) sb.AppendLine(Recortar($"Cliente: {venta.ClienteNombre}", Ancho));
-        if (!string.IsNullOrWhiteSpace(venta.ClienteDireccion))
+        // Si la direccion ya viene en la nota (el POS la precarga), no se repite.
+        if (!string.IsNullOrWhiteSpace(venta.ClienteDireccion) && !NotaContiene(venta.Nota, venta.ClienteDireccion))
         {
             foreach (var l in Envolver($"Dir: {venta.ClienteDireccion}", Ancho)) sb.AppendLine(l);
         }
@@ -62,13 +63,23 @@ public static class TicketBuilder
         if (!string.IsNullOrWhiteSpace(venta.Nota))
         {
             sb.AppendLine(Linea());
-            foreach (var l in Envolver($"Nota: {venta.Nota}", Ancho)) sb.AppendLine(l);
+            var primera = true;
+            foreach (var renglon in venta.Nota.Replace("\r", "").Split('\n'))
+            {
+                if (string.IsNullOrWhiteSpace(renglon)) continue;
+                foreach (var l in Envolver(primera ? $"Nota: {renglon.Trim()}" : renglon.Trim(), Ancho)) sb.AppendLine(l);
+                primera = false;
+            }
         }
 
         sb.AppendLine(Linea());
-        sb.AppendLine(Centrar("Gracias por su compra"));
+        var pie = string.IsNullOrWhiteSpace(negocio?.PieTicket) ? "Gracias por su compra" : negocio!.PieTicket!.Trim();
+        foreach (var l in Envolver(pie, Ancho)) sb.AppendLine(Centrar(l));
         return sb.ToString().TrimEnd();
     }
+
+    private static bool NotaContiene(string? nota, string texto) =>
+        !string.IsNullOrWhiteSpace(nota) && nota.Contains(texto.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>"Cargo por credito (5%)": el porcentaje se deduce de lo fiado antes del cargo.</summary>
     private static string EtiquetaRecargo(VentaDto venta)

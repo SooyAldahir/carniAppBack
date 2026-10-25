@@ -8,7 +8,9 @@ public record NegocioDto(
     string? RedSocialPrincipal,
     string? Direccion,
     string Moneda,
-    string ZonaHoraria);
+    string ZonaHoraria,
+    string? ColorPrimario = null,
+    string? PieTicket = null);
 
 public record ActualizarNegocioRequest(
     string NombreComercial,
@@ -17,4 +19,6 @@ public record ActualizarNegocioRequest(
     string? RedSocialPrincipal,
     string? Direccion,
     string Moneda,
-    string ZonaHoraria);
+    string ZonaHoraria,
+    string? ColorPrimario = null,
+    string? PieTicket = null);

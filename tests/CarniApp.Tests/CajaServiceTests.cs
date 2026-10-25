@@ -121,6 +121,111 @@ public class CajaServiceTests : IDisposable
         Assert.Equal(100m, despues.Datos.Corte!.FondoInicial);
     }
 
+    // ------------------------------------------------------------------ meta y retiros
+
+    [Fact]
+    public async Task Abrir_ConMeta_LaGuarda_YSinMetaOCeroQuedaNula()
+    {
+        var conMeta = await Con(s => s.AbrirAsync(new AbrirCajaRequest(500m, 3000m), _usuarioId));
+        Assert.True(conMeta.Exitoso, conMeta.Mensaje);
+        Assert.Equal(3000m, conMeta.Datos!.MetaEfectivo);
+
+        await Cerrar(500m);
+        var cero = await Con(s => s.AbrirAsync(new AbrirCajaRequest(500m, 0m), _usuarioId));
+        Assert.Null(cero.Datos!.MetaEfectivo);
+    }
+
+    [Fact]
+    public async Task Abrir_ConMetaNegativa_SeRechaza()
+    {
+        var r = await Con(s => s.AbrirAsync(new AbrirCajaRequest(500m, -5m), _usuarioId));
+        Assert.Equal(CajaResultCode.ImporteInvalido, r.Code);
+    }
+
+    [Fact]
+    public async Task Estado_SinTurno_OfreceLaMetaDelUltimoTurnoComoSugerida()
+    {
+        await Con(s => s.AbrirAsync(new AbrirCajaRequest(500m, 2500m), _usuarioId));
+        await Cerrar(500m);
+
+        var estado = (await Con(s => s.ObtenerEstadoAsync())).Datos!;
+
+        Assert.False(estado.Abierta);
+        Assert.Equal(2500m, estado.MetaSugerida);
+    }
+
+    [Fact]
+    public async Task ActualizarMeta_CambiaYQuita_PeroRequiereTurnoAbierto()
+    {
+        var sinTurno = await Con(s => s.ActualizarMetaAsync(new ActualizarMetaRequest(1000m)));
+        Assert.Equal(CajaResultCode.SinCajaAbierta, sinTurno.Code);
+
+        await Abrir(500m);
+        var puesta = await Con(s => s.ActualizarMetaAsync(new ActualizarMetaRequest(4000m)));
+        Assert.Equal(4000m, puesta.Datos!.MetaEfectivo);
+
+        var quitada = await Con(s => s.ActualizarMetaAsync(new ActualizarMetaRequest(null)));
+        Assert.Null(quitada.Datos!.MetaEfectivo);
+
+        var mala = await Con(s => s.ActualizarMetaAsync(new ActualizarMetaRequest(-1m)));
+        Assert.Equal(CajaResultCode.ImporteInvalido, mala.Code);
+    }
+
+    [Fact]
+    public async Task Retiro_BajaElEfectivoEsperado_PeroNoCuentaComoGasto()
+    {
+        await Abrir(500m);
+        AgregarVenta(1500m, _clock.Now.AddMinutes(10), EstadoVenta.Completada, (_efectivo, 1500m));
+        _clock.Avanzar(TimeSpan.FromHours(1));
+
+        var r = await Con(s => s.RegistrarRetiroAsync(new RetiroCajaRequest(1200m), _usuarioId));
+
+        Assert.True(r.Exitoso, r.Mensaje);
+        Assert.Equal(1200m, r.Datos!.TotalRetiros);
+        Assert.Equal(0m, r.Datos.TotalGastos);
+        Assert.Equal(800m, r.Datos.EfectivoEsperado);   // 500 + 1500 - 1200
+        var mov = Assert.Single(r.Datos.Gastos);
+        Assert.Equal("Retiro", mov.Tipo);
+        Assert.Equal("Retiro de efectivo", mov.Concepto);
+    }
+
+    [Fact]
+    public async Task Retiro_MayorAlEfectivoEnCaja_SeRechaza_YSinTurnoTambien()
+    {
+        var sinTurno = await Con(s => s.RegistrarRetiroAsync(new RetiroCajaRequest(10m), _usuarioId));
+        Assert.Equal(CajaResultCode.SinCajaAbierta, sinTurno.Code);
+
+        await Abrir(500m);
+        var demasiado = await Con(s => s.RegistrarRetiroAsync(new RetiroCajaRequest(500.01m), _usuarioId));
+        Assert.Equal(CajaResultCode.EfectivoInsuficiente, demasiado.Code);
+
+        var cero = await Con(s => s.RegistrarRetiroAsync(new RetiroCajaRequest(0m), _usuarioId));
+        Assert.Equal(CajaResultCode.ImporteInvalido, cero.Code);
+    }
+
+    [Fact]
+    public async Task Cierre_ConRetiro_Cuadra_YElTicketLoListaAparte()
+    {
+        await Abrir(500m);
+        AgregarVenta(1000m, _clock.Now.AddMinutes(5), EstadoVenta.Completada, (_efectivo, 1000m));
+        await Con(s => s.RegistrarGastoAsync(new GastoCajaRequest("Hielo", 100m), _usuarioId));
+        _clock.Avanzar(TimeSpan.FromHours(1));
+        await Con(s => s.RegistrarRetiroAsync(new RetiroCajaRequest(900m, "Al sobre"), _usuarioId));
+
+        var cierre = await Cerrar(500m);   // 500 + 1000 - 100 - 900
+
+        Assert.True(cierre.Exitoso, cierre.Mensaje);
+        Assert.Equal(500m, cierre.Datos!.EfectivoEsperado);
+        Assert.Equal(0m, cierre.Datos.Diferencia);
+        Assert.Equal(100m, cierre.Datos.TotalGastos);
+        Assert.Equal(900m, cierre.Datos.TotalRetiros);
+
+        var ticket = (await Con(s => s.ObtenerTicketAsync(cierre.Datos.Id))).Datos!.Texto;
+        Assert.Contains("- Retiros", ticket);
+        Assert.Contains("Retiros:", ticket);
+        Assert.Contains("Al sobre", ticket);
+    }
+
     // ------------------------------------------------------------------ resumen
 
     [Fact]

@@ -11,6 +11,10 @@ public interface ICajaService
 
     Task<CajaResultDto<CorteCajaDto>> RegistrarGastoAsync(GastoCajaRequest request, Guid usuarioId, CancellationToken cancellationToken = default);
 
+    Task<CajaResultDto<CorteCajaDto>> RegistrarRetiroAsync(RetiroCajaRequest request, Guid usuarioId, CancellationToken cancellationToken = default);
+
+    Task<CajaResultDto<CorteCajaDto>> ActualizarMetaAsync(ActualizarMetaRequest request, CancellationToken cancellationToken = default);
+
     Task<CajaResultDto<CorteCajaDto>> CerrarAsync(CerrarCajaRequest request, Guid usuarioId, CancellationToken cancellationToken = default);
 
     Task<CajaResultDto<CorteCajaDto>> ReabrirAsync(Guid id, CancellationToken cancellationToken = default);

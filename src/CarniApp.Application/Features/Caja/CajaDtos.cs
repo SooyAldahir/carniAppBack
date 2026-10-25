@@ -1,6 +1,12 @@
 namespace CarniApp.Application.Features.Caja;
 
-public record AbrirCajaRequest(decimal FondoInicial);
+public record AbrirCajaRequest(decimal FondoInicial, decimal? MetaEfectivo = null);
+
+/// <summary>Retiro de efectivo de la caja (p. ej. al alcanzar la meta). Concepto opcional.</summary>
+public record RetiroCajaRequest(decimal Importe, string? Concepto = null);
+
+/// <summary>Meta de efectivo en caja. Null o 0 = sin meta.</summary>
+public record ActualizarMetaRequest(decimal? Meta);
 
 public record GastoCajaRequest(string Concepto, decimal Importe);
 
@@ -8,10 +14,11 @@ public record CerrarCajaRequest(decimal EfectivoContado, string? Notas = null);
 
 public record MetodoTotalDto(string Metodo, decimal Importe);
 
-public record GastoCajaDto(Guid Id, string Concepto, decimal Importe, string? UsuarioNombre, DateTime Fecha);
+public record GastoCajaDto(Guid Id, string Concepto, decimal Importe, string? UsuarioNombre, DateTime Fecha, string Tipo = "Gasto");
 
 /// <summary>
-/// Detalle de un turno. EfectivoEsperado = fondo + ventas en efectivo + abonos - gastos.
+/// Detalle de un turno. EfectivoEsperado = fondo + ventas en efectivo + abonos - gastos - retiros.
+/// Gastos contiene gastos y retiros (campo Tipo); TotalGastos y TotalRetiros los separan.
 /// EfectivoContado y Diferencia solo existen cuando el corte esta cerrado.
 /// </summary>
 public record CorteCajaDto(
@@ -32,9 +39,12 @@ public record CorteCajaDto(
     decimal EfectivoEsperado,
     decimal? EfectivoContado,
     decimal? Diferencia,
-    string? Notas);
+    string? Notas,
+    decimal TotalRetiros = 0m,
+    decimal? MetaEfectivo = null);
 
-public record EstadoCajaDto(bool Abierta, CorteCajaDto? Corte);
+/// <summary>MetaSugerida: la meta del ultimo turno, para precargarla al abrir uno nuevo.</summary>
+public record EstadoCajaDto(bool Abierta, CorteCajaDto? Corte, decimal? MetaSugerida = null);
 
 public record CorteCajaResumenDto(
     Guid Id,
@@ -53,6 +63,7 @@ public enum CajaResultCode
     YaHayCajaAbierta,
     SinCajaAbierta,
     ImporteInvalido,
+    EfectivoInsuficiente,
     ConceptoInvalido,
     NotasInvalidas,
     CorteNoEncontrado,

@@ -35,7 +35,24 @@ public class NegocioController : ControllerBase
     [HttpPut]
     public async Task<ActionResult<NegocioDto>> Put(ActualizarNegocioRequest request, CancellationToken cancellationToken)
     {
+        var error = Validar(request);
+        if (error is not null) return BadRequest(new { mensaje = error });
+
         var actualizado = await _negocioService.ActualizarAsync(request, cancellationToken);
         return Ok(actualizado);
+    }
+
+    private static string? Validar(ActualizarNegocioRequest r)
+    {
+        if (string.IsNullOrWhiteSpace(r.NombreComercial) || r.NombreComercial.Trim().Length > 150)
+            return "El nombre del negocio es obligatorio (maximo 150 caracteres).";
+        if (!string.IsNullOrWhiteSpace(r.ColorPrimario) &&
+            !System.Text.RegularExpressions.Regex.IsMatch(r.ColorPrimario.Trim(), "^#[0-9A-Fa-f]{6}$"))
+            return "El color debe tener el formato #RRGGBB.";
+        if (r.Telefono is { Length: > 30 }) return "El telefono no puede pasar de 30 caracteres.";
+        if (r.LogoUrl is { Length: > 500 }) return "La direccion del logo es demasiado larga.";
+        if (r.PieTicket is { Length: > 120 })
+            return "El mensaje del ticket no puede pasar de 120 caracteres.";
+        return null;
     }
 }

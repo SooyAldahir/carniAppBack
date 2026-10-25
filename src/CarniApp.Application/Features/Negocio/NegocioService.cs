@@ -41,6 +41,8 @@ public class NegocioService : INegocioService
         negocio.Direccion = request.Direccion;
         negocio.Moneda = request.Moneda;
         negocio.ZonaHoraria = request.ZonaHoraria;
+        negocio.ColorPrimario = string.IsNullOrWhiteSpace(request.ColorPrimario) ? null : request.ColorPrimario.Trim();
+        negocio.PieTicket = string.IsNullOrWhiteSpace(request.PieTicket) ? null : request.PieTicket.Trim();
 
         _negocioRepository.Update(negocio);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -56,5 +58,7 @@ public class NegocioService : INegocioService
         negocio.RedSocialPrincipal,
         negocio.Direccion,
         negocio.Moneda,
-        negocio.ZonaHoraria);
+        negocio.ZonaHoraria,
+        negocio.ColorPrimario,
+        negocio.PieTicket);
 }

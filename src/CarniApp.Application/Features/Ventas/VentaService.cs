@@ -125,9 +125,9 @@ public class VentaService : IVentaService
         }
 
         var nota = string.IsNullOrWhiteSpace(request.Nota) ? null : request.Nota.Trim();
-        if (nota is { Length: > 200 })
+        if (nota is { Length: > 500 })
         {
-            return Fail(VentaResultCode.NotaInvalida, "La nota no puede pasar de 200 caracteres.");
+            return Fail(VentaResultCode.NotaInvalida, "La nota no puede pasar de 500 caracteres.");
         }
 
         // 1) Lineas: corte vigente, cantidad valida, importe con el precio del servidor

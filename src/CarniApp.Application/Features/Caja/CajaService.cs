@@ -51,7 +51,11 @@ public class CajaService : ICajaService
         }
 
         var corte = await _corteRepository.ObtenerAbiertoAsync(sucursal.Id, cancellationToken);
-        if (corte is null) return CajaResultDto<EstadoCajaDto>.Ok(new EstadoCajaDto(false, null));
+        if (corte is null)
+        {
+            var ultimo = (await _corteRepository.ListarRecientesAsync(1, cancellationToken)).FirstOrDefault();
+            return CajaResultDto<EstadoCajaDto>.Ok(new EstadoCajaDto(false, null, ultimo?.MetaEfectivo));
+        }
 
         return CajaResultDto<EstadoCajaDto>.Ok(new EstadoCajaDto(true, await MapearAsync(corte, cancellationToken)));
     }
@@ -74,9 +78,15 @@ public class CajaService : ICajaService
             return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.YaHayCajaAbierta, "Ya hay un turno de caja abierto. Ciérralo antes de abrir otro.");
         }
 
+        if (request.MetaEfectivo is < 0 or > 100_000_000m)
+        {
+            return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.ImporteInvalido, "La meta de efectivo no es valida.");
+        }
+
         var fondo = Redondear(request.FondoInicial);
         var corte = new CorteCaja
         {
+            MetaEfectivo = NormalizarMeta(request.MetaEfectivo),
             SucursalId = sucursal.Id,
             UsuarioId = usuarioId,
             FechaInicio = _dateTimeProvider.UtcNow,
@@ -113,12 +123,69 @@ public class CajaService : ICajaService
             CorteCajaId = corte.Id,
             Concepto = concepto,
             Importe = Redondear(request.Importe),
+            Tipo = TipoGastoCaja.Gasto,
             UsuarioId = usuarioId,
             Fecha = _dateTimeProvider.UtcNow
         }, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return CajaResultDto<CorteCajaDto>.Ok(await MapearAsync(await Recargar(corte.Id, cancellationToken), cancellationToken));
+    }
+
+    public async Task<CajaResultDto<CorteCajaDto>> RegistrarRetiroAsync(RetiroCajaRequest request, Guid usuarioId, CancellationToken cancellationToken = default)
+    {
+        var concepto = string.IsNullOrWhiteSpace(request.Concepto) ? "Retiro de efectivo" : request.Concepto.Trim();
+        if (concepto.Length > 100)
+        {
+            return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.ConceptoInvalido, "El concepto del retiro no puede pasar de 100 caracteres.");
+        }
+
+        if (request.Importe <= 0 || request.Importe > 1_000_000m)
+        {
+            return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.ImporteInvalido, "El importe del retiro debe ser mayor a cero.");
+        }
+
+        var abierto = await ObtenerAbiertoAsync(cancellationToken);
+        if (abierto.Corte is null) return abierto.Error!;
+        var corte = abierto.Corte;
+
+        var importe = Redondear(request.Importe);
+        var calculo = await CalcularAsync(corte, _dateTimeProvider.UtcNow, cancellationToken);
+        if (importe > calculo.EfectivoEsperado)
+        {
+            return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.EfectivoInsuficiente,
+                $"No puedes retirar {importe:N2}: en caja hay {calculo.EfectivoEsperado:N2}.");
+        }
+
+        await _corteRepository.AddGastoAsync(new GastoCaja
+        {
+            CorteCajaId = corte.Id,
+            Concepto = concepto,
+            Importe = importe,
+            Tipo = TipoGastoCaja.Retiro,
+            UsuarioId = usuarioId,
+            Fecha = _dateTimeProvider.UtcNow
+        }, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return CajaResultDto<CorteCajaDto>.Ok(await MapearAsync(await Recargar(corte.Id, cancellationToken), cancellationToken));
+    }
+
+    public async Task<CajaResultDto<CorteCajaDto>> ActualizarMetaAsync(ActualizarMetaRequest request, CancellationToken cancellationToken = default)
+    {
+        if (request.Meta is < 0 or > 100_000_000m)
+        {
+            return CajaResultDto<CorteCajaDto>.Fail(CajaResultCode.ImporteInvalido, "La meta de efectivo no es valida.");
+        }
+
+        var abierto = await ObtenerAbiertoAsync(cancellationToken);
+        if (abierto.Corte is null) return abierto.Error!;
+        var corte = abierto.Corte;
+
+        corte.MetaEfectivo = NormalizarMeta(request.Meta);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return CajaResultDto<CorteCajaDto>.Ok(await MapearAsync(corte, cancellationToken));
     }
 
     public async Task<CajaResultDto<CorteCajaDto>> CerrarAsync(CerrarCajaRequest request, Guid usuarioId, CancellationToken cancellationToken = default)
@@ -241,6 +308,7 @@ public class CajaService : ICajaService
         decimal VentasEfectivo,
         decimal AbonosEfectivo,
         decimal TotalGastos,
+        decimal TotalRetiros,
         decimal EfectivoEsperado);
 
     private async Task<(CorteCaja? Corte, CajaResultDto<CorteCajaDto>? Error)> ObtenerAbiertoAsync(CancellationToken cancellationToken)
@@ -281,7 +349,8 @@ public class CajaService : ICajaService
             .Where(m => m.Metodo.Equals(MetodoPago.NombreEfectivo, StringComparison.OrdinalIgnoreCase))
             .Sum(m => m.Importe);
         var abonosEfectivo = abonos.Sum(a => a.Importe);
-        var gastos = corte.Gastos.Sum(g => g.Importe);
+        var gastos = corte.Gastos.Where(g => g.Tipo != TipoGastoCaja.Retiro).Sum(g => g.Importe);
+        var retiros = corte.Gastos.Where(g => g.Tipo == TipoGastoCaja.Retiro).Sum(g => g.Importe);
 
         return new Calculo(
             completadas.Count,
@@ -291,7 +360,8 @@ public class CajaService : ICajaService
             ventasEfectivo,
             abonosEfectivo,
             gastos,
-            corte.FondoInicial + ventasEfectivo + abonosEfectivo - gastos);
+            retiros,
+            corte.FondoInicial + ventasEfectivo + abonosEfectivo - gastos - retiros);
     }
 
     private static int IndiceMetodo(string nombre)
@@ -307,7 +377,7 @@ public class CajaService : ICajaService
 
         var gastos = corte.Gastos
             .OrderBy(g => g.Fecha)
-            .Select(g => new GastoCajaDto(g.Id, g.Concepto, g.Importe, g.Usuario?.NombreCompleto, g.Fecha))
+            .Select(g => new GastoCajaDto(g.Id, g.Concepto, g.Importe, g.Usuario?.NombreCompleto, g.Fecha, g.Tipo))
             .ToList();
 
         return new CorteCajaDto(
@@ -328,8 +398,13 @@ public class CajaService : ICajaService
             c.EfectivoEsperado,
             corte.EfectivoContado,
             corte.Diferencia,
-            corte.Notas);
+            corte.Notas,
+            c.TotalRetiros,
+            corte.MetaEfectivo);
     }
+
+    /// <summary>Sin meta (null o 0) se guarda null.</summary>
+    private static decimal? NormalizarMeta(decimal? meta) => meta is null or <= 0 ? null : Redondear(meta.Value);
 
     private async Task<Sucursal?> ObtenerSucursalPrincipalAsync(CancellationToken cancellationToken)
     {

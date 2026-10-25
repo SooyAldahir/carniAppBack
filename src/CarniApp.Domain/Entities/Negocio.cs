@@ -23,4 +23,10 @@ public class Negocio : BaseEntity
     public string Moneda { get; set; } = "MXN";
 
     public string ZonaHoraria { get; set; } = "America/Mexico_City";
+
+    /// <summary>Color de acento de la app en hex (#RRGGBB). Null = el de la marca por defecto.</summary>
+    public string? ColorPrimario { get; set; }
+
+    /// <summary>Mensaje al pie del ticket. Null = "Gracias por su compra".</summary>
+    public string? PieTicket { get; set; }
 }

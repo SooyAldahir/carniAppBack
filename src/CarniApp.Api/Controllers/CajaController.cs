@@ -38,6 +38,16 @@ public class CajaController : ControllerBase
         Responder(await _service.RegistrarGastoAsync(request, UsuarioActualId(), cancellationToken));
 
     [PermisoAuthorize("caja.cortar")]
+    [HttpPost("retiros")]
+    public async Task<IActionResult> Retiro(RetiroCajaRequest request, CancellationToken cancellationToken) =>
+        Responder(await _service.RegistrarRetiroAsync(request, UsuarioActualId(), cancellationToken));
+
+    [PermisoAuthorize("caja.cortar")]
+    [HttpPut("meta")]
+    public async Task<IActionResult> Meta(ActualizarMetaRequest request, CancellationToken cancellationToken) =>
+        Responder(await _service.ActualizarMetaAsync(request, cancellationToken));
+
+    [PermisoAuthorize("caja.cortar")]
     [HttpPost("cerrar")]
     public async Task<IActionResult> Cerrar(CerrarCajaRequest request, CancellationToken cancellationToken) =>
         Responder(await _service.CerrarAsync(request, UsuarioActualId(), cancellationToken));

@@ -39,7 +39,19 @@ public class CorteCaja
     public string Estado { get; set; } = EstadoCorteCaja.Abierto;
     public string? Notas { get; set; }
 
+    /// <summary>Proyeccion de efectivo en caja: al alcanzarla se avisa que toca hacer un retiro. Null = sin meta.</summary>
+    public decimal? MetaEfectivo { get; set; }
+
     public ICollection<GastoCaja> Gastos { get; set; } = new List<GastoCaja>();
+}
+
+public static class TipoGastoCaja
+{
+    /// <summary>Gasto del negocio pagado con efectivo de la caja.</summary>
+    public const string Gasto = "Gasto";
+
+    /// <summary>Retiro de efectivo (se guarda en otro lado); no es un gasto.</summary>
+    public const string Retiro = "Retiro";
 }
 
 /// <summary>Gasto o retiro pagado con efectivo de la caja durante un turno.</summary>
@@ -52,6 +64,9 @@ public class GastoCaja
 
     public string Concepto { get; set; } = string.Empty;
     public decimal Importe { get; set; }
+
+    /// <summary>Ver <see cref="TipoGastoCaja"/>.</summary>
+    public string Tipo { get; set; } = TipoGastoCaja.Gasto;
 
     public Guid UsuarioId { get; set; }
     public Usuario Usuario { get; set; } = null!;

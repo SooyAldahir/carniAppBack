@@ -127,6 +127,7 @@ public class CarniAppDbContext : DbContext
             entity.Property(c => c.Diferencia).HasColumnType("decimal(10,2)");
             entity.Property(c => c.Estado).HasMaxLength(20);
             entity.Property(c => c.Notas).HasMaxLength(300);
+            entity.Property(c => c.MetaEfectivo).HasColumnType("decimal(12,2)");
 
             entity.HasOne(c => c.Sucursal).WithMany().HasForeignKey(c => c.SucursalId);
             entity.HasOne(c => c.Usuario).WithMany().HasForeignKey(c => c.UsuarioId);
@@ -137,6 +138,7 @@ public class CarniAppDbContext : DbContext
         {
             entity.HasKey(g => g.Id);
             entity.Property(g => g.Concepto).HasMaxLength(100);
+            entity.Property(g => g.Tipo).HasMaxLength(10);
             entity.Property(g => g.Importe).HasColumnType("decimal(10,2)");
             entity.HasOne(g => g.Usuario).WithMany().HasForeignKey(g => g.UsuarioId);
         });
@@ -192,7 +194,7 @@ public class CarniAppDbContext : DbContext
             entity.Property(v => v.RecargoCredito).HasColumnType("decimal(10,2)");
             entity.Property(v => v.Estado).HasMaxLength(20);
             entity.Property(v => v.MotivoAnulacion).HasMaxLength(300);
-            entity.Property(v => v.Nota).HasMaxLength(200);
+            entity.Property(v => v.Nota).HasMaxLength(500);
             entity.HasIndex(v => v.Fecha);
 
             entity.HasOne(v => v.Sucursal).WithMany().HasForeignKey(v => v.SucursalId);
