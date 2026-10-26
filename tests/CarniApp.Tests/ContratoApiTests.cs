@@ -29,7 +29,7 @@ public class ContratoApiTests
     };
 
     /// <summary>Escrituras que solo piden estar autenticado (cerrar la propia sesion).</summary>
-    private static readonly HashSet<string> EscriturasSoloAutenticadas = new() { "AuthController.Logout" };
+    private static readonly HashSet<string> EscriturasSoloAutenticadas = new() { "AuthController.Logout", "AuthController.CambiarPassword" };
 
     private static IEnumerable<Type> Controllers() =>
         typeof(CajaController).Assembly.GetTypes()
@@ -125,7 +125,7 @@ public class ContratoApiTests
         var noDebeTener = new[]
         {
             "pos.anular", "pos.descuento.alto", "pos.recargo.ajustar", "caja.reabrir", "inventario.ajustar",
-            "ventafacil.registrar", "catalogo.administrar", "config.critica.editar"
+            "ventafacil.registrar", "catalogo.administrar", "config.critica.editar", "usuarios.administrar"
         };
         foreach (var p in noDebeTener) Assert.False(cajera.Contains(p), $"La Cajera no deberia tener '{p}'.");
     }

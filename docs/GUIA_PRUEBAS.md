@@ -19,6 +19,7 @@ Qué cubren:
 | `SchemaContractTests` | Cada entidad de EF existe en los scripts SQL con todas sus columnas |
 | `ContratoApiTests` | Todo endpoint pide sesión; toda escritura pide un permiso; los permisos usados existen en los scripts y los recibe el Super Administrador; la Cajera tiene lo necesario y nada de administración; todos los servicios están registrados en DI |
 | `FlujoIntegralTests` | Un día completo: caja → lotes → ventas (efectivo, mixta, crédito) → abono → gasto → anulación → corte → reabrir. Stock = kardex, saldo del cliente y corte cuadran |
+| `UsuarioServiceTests` | Alta de cajeros (clave cifrada, no repetir usuario aunque cambie la capitalización), baja y reactivación, cambio de rol, restablecer y cambiar contraseña, desbloqueo, y las reglas de seguridad (nadie se desactiva ni se cambia el rol a sí mismo; siempre queda un Super Administrador activo; al desactivar o cambiar la clave se cierran las sesiones) |
 | `VentaServiceTests`, `CajaServiceTests` (incluye meta de efectivo y retiros), `VentaFacilServiceTests`, `ClienteServiceTests`, `InventarioServiceTests`, `CatalogoServiceTests`, `AuthServiceTests` | Reglas de cada módulo |
 
 Frontend:
@@ -31,8 +32,11 @@ flutter test
 
 Qué cubre el front: `caja_test` (turnos, meta de efectivo, retiros y cuándo avisar), `nota_cliente_test`
 (dirección y referencia en la nota sin perder lo escrito a mano), `ajustes_test` (color de marca, datos del
-negocio y tema), `shell_test` (barra lateral por permisos, cajón en pantallas angostas, cambio de módulo) y
-las pruebas de impresión, ticket, clientes y Venta Fácil.
+negocio y tema), `shell_test` (barra lateral por permisos, cajón en pantallas angostas, cambio de módulo),
+`tickets_abiertos_test` (ventas simultáneas: carritos separados, existencias compartidas, cerrar y renumerar),
+`buscar_clientes_test` (búsqueda por nombre o por los últimos 4 dígitos del teléfono), `logo_ticket_test`
+(imagen a puntos para la térmica y su inclusión en el ticket), `usuarios_test` (pantalla de usuarios y cajeros,
+validaciones y cambio de contraseña) y las pruebas de impresión, ticket, clientes y Venta Fácil.
 
 Ambos se ejecutan solos en GitHub (pestaña **Actions**) con cada `git push`.
 
@@ -41,9 +45,10 @@ Ambos se ejecutan solos en GitHub (pestaña **Actions**) con cada `git push`.
 Corre en `CarniAppDb`, **en orden**, los scripts de `Database/Scripts/` que aún no hayas aplicado
 (todos son idempotentes: repetirlos no daña nada):
 
-`001` → `002` → `003` → `004` → `005` → `006` → `007` → `008` → `009` → `010` → `011` → `012` → `013` → `014` → `015` → `016`
+`001` → `002` → `003` → `004` → `005` → `006` → `007` → `008` → `009` → `010` → `011` → `012` → `013` → `014` → `015` → `016` → `017`
 
 `016` agrega la meta de efectivo y los retiros de caja, la nota de venta de 500 caracteres y los datos de marca (color y pie del ticket).
+`017` agrega el permiso `usuarios.administrar` (alta de cajeros y demás personal) y se lo da al Super Administrador; no cambia tablas.
 
 Después reinicia la API y **vuelve a iniciar sesión** (los permisos viajan dentro del token).
 
@@ -103,13 +108,28 @@ Con el turno del paso 15 cerrado, abre uno nuevo y sigue estos pasos.
 25. **Ajustes** → *Negocio*: cambia el nombre, el teléfono y el pie del ticket y guarda; la barra lateral y el ticket lo reflejan. Solo quien tiene `config.critica.editar` puede editar (la Cajera lo ve sin poder cambiarlo).
 26. **Ajustes** → *Apariencia*: elige otro color de la marca (o escribe uno `#RRGGBB`): botones y selección cambian en todas las cajas. *Modo de pantalla* (Sistema / Claro / Oscuro) y *Abrir el cajón al cobrar en efectivo* se guardan solo en ese equipo.
 
+### Ventas simultáneas y búsqueda de clientes
+27. **Punto de venta**: arma una venta (1 kg de Bistec). Toca **Nueva venta** (arriba): aparece la pestaña *Venta 2* con el carrito vacío; agrega 2 kg de Molida. Al cambiar de pestaña cada venta conserva su carrito, cliente y nota. Las existencias se reparten entre pestañas: no puedes vender dos veces el mismo kilo.
+28. Cobra la *Venta 2*: se cierra solo su pestaña y la otra queda como estaba. Al cobrar la última queda una venta nueva vacía. Cerrar con la **x** una pestaña con productos pide confirmación. Hay un máximo de 8 abiertas. Cambiar de módulo y volver **no** pierde las pestañas.
+29. **Elegir cliente**: escribe parte del nombre **o los últimos 4 dígitos del teléfono** (con o sin guiones o espacios, por ejemplo `4567` o `45-67`): salen los clientes cuyo teléfono termina así, y el teléfono se ve bajo el nombre. Lo mismo funciona en *Clientes y crédito*.
+
+### Logo en el ticket
+30. **Ajustes → Negocio**: en *Dirección web del logo* pon la URL de una imagen PNG, JPG, GIF o WebP (SVG no sirve) y guarda. En *Impresión de tickets* deja activo **Imprimir el logo**, elige el tamaño y toca **Imprimir prueba del logo**: sale el logo centrado arriba. Si la imagen no se puede bajar, el ticket se imprime sin logo (el cobro nunca se bloquea). Activar/desactivar y el tamaño son por equipo. En la versión web, el navegador imprime el logo desde la misma URL.
+
+### Usuarios y cajeros (script 017)
+31. Aplica el script `017` y **vuelve a iniciar sesión** como Super Administrador: en la barra lateral (sección *Sistema*) aparece **Usuarios y cajeros**. Lista al personal con su rol y estado, y *Qué puede hacer cada rol* muestra los permisos en palabras del negocio.
+32. **Nuevo usuario**: nombre *María López*, usuario `maria.lopez`, contraseña de 8 o más caracteres y rol **Cajera** (viene elegido). Cierra sesión y entra como ella: ve Punto de venta, Ventas del día, Caja y corte, Clientes e Inventario, pero **no** *Usuarios y cajeros* ni *Venta Fácil*.
+33. Como administrador: **Editar** cambia nombre, correo o rol. **Desactivar** a María (pide confirmar): ya no puede entrar y su sesión abierta se cierra; **Reactivar** la deja entrar otra vez. **Restablecer contraseña** fija una nueva, cierra su sesión y quita el bloqueo. Con 5 intentos fallidos aparece *Bloqueado* y la opción **Desbloquear**.
+34. Reglas de seguridad: no puedes desactivarte ni cambiarte el rol a ti mismo; siempre debe quedar al menos un Super Administrador activo; el usuario de inicio de sesión no se puede repetir (ni cambiando mayúsculas).
+35. **Ajustes → Mi cuenta → Cambiar contraseña** (cualquier usuario): pide la actual y la nueva dos veces; al aceptar se cierra la sesión y hay que entrar con la nueva.
+
 ### Roles
-27. Entra como **Cajera**: no deben aparecer *Venta Fácil*; en Cobro puede **bajar** el cargo de crédito a 0% pero no subirlo; no puede anular ventas.
+36. Entra como **Cajera**: no deben aparecer *Venta Fácil* ni *Usuarios y cajeros*; en Cobro puede **bajar** el cargo de crédito a 0% pero no subirlo; no puede anular ventas.
 
 ### Hardware (cuando lleguen los equipos)
-28. Impresora: *Ajustes → Impresión de tickets → Configurar* (red, Bluetooth, USB o cola del sistema) → *Imprimir prueba*, luego imprime un ticket y un corte.
-29. Lector de códigos: asigna código de barras a un corte en el catálogo y escanéalo en el POS.
-30. Báscula: pendiente de integrar.
+37. Impresora: *Ajustes → Impresión de tickets → Configurar* (red, Bluetooth, USB o cola del sistema) → *Imprimir prueba*, luego imprime un ticket y un corte.
+38. Lector de códigos: asigna código de barras a un corte en el catálogo y escanéalo en el POS.
+39. Báscula: pendiente de integrar.
 
 ## Si algo no cuadra
 

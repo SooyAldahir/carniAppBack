@@ -6,6 +6,7 @@ using CarniApp.Application.Features.Clientes;
 using CarniApp.Application.Features.Caja;
 using CarniApp.Application.Features.Inventario;
 using CarniApp.Application.Features.VentaFacil;
+using CarniApp.Application.Features.Usuarios;
 using CarniApp.Application.Features.Ventas;
 using CarniApp.Infrastructure.Security;
 using CarniApp.Infrastructure.Services;
@@ -59,6 +60,7 @@ public static class DependencyInjection
         services.AddScoped<IClienteService, ClienteService>();
         services.AddScoped<IVentaFacilService, VentaFacilService>();
         services.AddScoped<ICajaService, CajaService>();
+        services.AddScoped<IUsuarioService, UsuarioService>();
 
         return services;
     }

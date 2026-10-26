@@ -1,5 +1,7 @@
 using CarniApp.Application.Common.Interfaces;
+using System.Security.Claims;
 using CarniApp.Application.Features.Auth;
+using CarniApp.Application.Features.Usuarios;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,10 +16,12 @@ namespace CarniApp.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IUsuarioService _usuarioService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IUsuarioService usuarioService)
     {
         _authService = authService;
+        _usuarioService = usuarioService;
     }
 
     /// <summary>
@@ -55,6 +59,26 @@ public class AuthController : ControllerBase
     {
         await _authService.LogoutAsync(request.RefreshToken, cancellationToken);
         return NoContent();
+    }
+
+    /// <summary>
+    /// Cada usuario cambia su propia contrasena (pide la actual). Se cierran todas sus sesiones:
+    /// hay que volver a iniciar sesion con la nueva.
+    /// </summary>
+    [Authorize]
+    [HttpPost("cambiar-password")]
+    public async Task<IActionResult> CambiarPassword(CambiarPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var usuarioId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+        var r = await _usuarioService.CambiarPasswordPropiaAsync(usuarioId, request, cancellationToken);
+        if (r.Exitoso) return NoContent();
+
+        return r.Code switch
+        {
+            UsuarioResultCode.PasswordIncorrecta => BadRequest(new { mensaje = r.Mensaje }),
+            UsuarioResultCode.NoEncontrado => NotFound(new { mensaje = r.Mensaje }),
+            _ => BadRequest(new { mensaje = r.Mensaje })
+        };
     }
 
     private IActionResult ResultadoAHttp(AuthResultDto resultado)
